@@ -28,7 +28,11 @@ def _discover_documents() -> List[Path]:
     return [
         p
         for p in sorted(settings.DOCUMENTS_DIR.iterdir())
-        if p.is_file() and p.suffix.lower() in settings.ALLOWED_EXTENSIONS
+        if p.is_file()
+        and p.suffix.lower() in settings.ALLOWED_EXTENSIONS
+        # Ignora archivos temporales de bloqueo que Word/Excel crean mientras
+        # el documento original está abierto (ej. "~$Horario.xlsx").
+        and not p.name.startswith("~$")
     ]
 
 

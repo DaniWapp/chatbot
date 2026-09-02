@@ -135,7 +135,7 @@ GROQ_API_KEY=tu_clave_aqui
 
 ### 6.5. Agregar documentos
 
-Coloca tus archivos PDF, DOCX o TXT dentro de la carpeta `documents/`. El
+Coloca tus archivos PDF, DOCX, TXT o XLSX dentro de la carpeta `documents/`. El
 proyecto ya incluye 3 documentos de **ejemplo** (marcados como
 `_EJEMPLO`) para poder probar el sistema de inmediato; reemplázalos o
 complétalos con los documentos oficiales reales de la facultad.
@@ -167,7 +167,7 @@ http://localhost:8000/docs
 
 ## 7. Cómo agregar nuevos documentos
 
-1. Copia el archivo (PDF, DOCX o TXT) dentro de `documents/`.
+1. Copia el archivo (PDF, DOCX, TXT o XLSX) dentro de `documents/`.
 2. Ejecuta `ingestar.bat` (o `python scripts/ingest.py`) para reconstruir el
    índice.
 3. Reinicia el backend (`iniciar.bat`) si ya estaba corriendo, para que
@@ -229,7 +229,7 @@ chatbot/
 │   ├── config.py            # Configuración centralizada (.env)
 │   ├── api/routes.py        # Endpoints: /api/chat, /api/chat/stream, /api/ingest, /api/health
 │   ├── rag/                 # Núcleo del pipeline RAG
-│   │   ├── document_loader.py   # Extracción de texto (PDF/DOCX/TXT)
+│   │   ├── document_loader.py   # Extracción de texto (PDF/DOCX/TXT/XLSX)
 │   │   ├── chunker.py           # División en fragmentos con metadatos
 │   │   ├── embeddings.py        # Embeddings locales (Sentence Transformers)
 │   │   ├── vector_store.py      # Base vectorial FAISS
@@ -246,7 +246,7 @@ chatbot/
 │   └── evaluate.py
 ├── tests/                     # Pruebas automatizadas (pytest)
 ├── frontend/                  # Interfaz web (HTML/CSS/JS)
-├── documents/                 # Documentos fuente (PDF/DOCX/TXT)
+├── documents/                 # Documentos fuente (PDF/DOCX/TXT/XLSX)
 ├── vector_db/                 # Índice FAISS (se genera, no se versiona)
 ├── .env.example
 └── requirements.txt
@@ -257,6 +257,13 @@ chatbot/
 - Los PDF escaneados como imagen (sin texto seleccionable) no pueden
   procesarse; se necesitaría OCR, que está fuera del alcance de este
   proyecto.
+- Solo se soporta el formato Excel moderno `.xlsx`. Los archivos `.xls`
+  antiguos (Excel 97-2003) deben guardarse primero como `.xlsx`.
+- En los archivos Excel, cada fila se indexa como su propio fragmento (no se
+  agrupan varias filas juntas), para que cada registro se pueda recuperar
+  de forma precisa. Esto significa que una tabla con miles de filas genera
+  miles de fragmentos; es apropiado para horarios o pensum, no para bases
+  de datos masivas.
 - El historial de conversación se guarda en memoria del proceso: si el
   backend se reinicia, se pierde (aceptable para una demo académica).
 - FAISS con `IndexFlatIP` hace búsqueda exhaustiva (no aproximada); es

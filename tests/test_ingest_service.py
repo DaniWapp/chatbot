@@ -43,6 +43,28 @@ def test_ingestion_processes_valid_documents_and_skips_invalid(tmp_path, monkeyp
     assert len(result.errors) == 1
 
 
+def test_ingestion_ignores_office_lock_files(tmp_path, monkeypatch):
+    """Word/Excel crean un archivo temporal '~$archivo.xlsx' mientras el
+    documento original está abierto; no debe tratarse como un documento."""
+    (tmp_path / "valido.txt").write_text(
+        "Documento válido con contenido suficiente para generar chunks.", encoding="utf-8"
+    )
+    (tmp_path / "~$horario.xlsx").write_bytes(b"contenido de bloqueo temporal")
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+
+    with patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts), patch(
+        "app.services.ingest_service.vector_store.add_chunks"
+    ), patch("app.services.ingest_service.vector_store.reset_collection"):
+        result = run_ingestion(rebuild=True, log=lambda *_: None)
+
+    assert result.documents_processed == 1
+    assert result.documents_skipped == 0
+    assert result.errors == []
+
+
 def test_ingestion_with_no_documents_reports_error(tmp_path, monkeypatch):
     from app.config import settings
 

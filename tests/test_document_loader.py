@@ -37,3 +37,40 @@ def test_load_corrupt_docx_raises(tmp_path):
 
     with pytest.raises(DocumentLoadError):
         load_document(path)
+
+
+def test_load_xlsx_ok(tmp_path):
+    from openpyxl import Workbook
+
+    path = tmp_path / "horario.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Materia", "Día", "Salón"])
+    ws.append(["Cálculo Diferencial", "Lunes", "A101"])
+    ws.append(["Álgebra Lineal", "Martes", "A102"])
+    wb.save(str(path))
+
+    doc = load_document(path)
+
+    assert doc.is_tabular is True
+    assert len(doc.pages) == 1
+    assert "Materia: Cálculo Diferencial" in doc.pages[0].text
+    assert "Salón: A101" in doc.pages[0].text
+
+
+def test_load_empty_xlsx_raises(tmp_path):
+    from openpyxl import Workbook
+
+    path = tmp_path / "vacio.xlsx"
+    Workbook().save(str(path))
+
+    with pytest.raises(DocumentLoadError):
+        load_document(path)
+
+
+def test_load_corrupt_xlsx_raises(tmp_path):
+    path = tmp_path / "corrupto.xlsx"
+    path.write_bytes(b"esto no es un xlsx valido, solo bytes al azar")
+
+    with pytest.raises(DocumentLoadError):
+        load_document(path)

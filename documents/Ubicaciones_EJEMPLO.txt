@@ -4,3 +4,6 @@ UBICACIONES - FACULTAD DE INGENIERÍA (EJEMPLO)
 
 ¿Dónde queda el laboratorio de la Facultad de Ingeniería?
 El laboratorio de la Facultad de Ingeniería está ubicado a la vuelta de la esquina del edificio principal, cerca de las salas de sistemas.
+
+¿Donde queda la cafetería?
+La cafetería queda al frente del lado de la esquina donde doña Maritza.

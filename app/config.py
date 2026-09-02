@@ -44,7 +44,7 @@ class Settings:
     VECTOR_DB_DIR: Path = BASE_DIR / os.getenv("VECTOR_DB_DIR", "vector_db")
     MAX_FILE_SIZE_MB: int = _get_int("MAX_FILE_SIZE_MB", 25)
 
-    ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx"}
+    ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".xlsx"}
     COLLECTION_NAME = "facultad_ingenieria"
 
     NO_INFO_MESSAGE = (

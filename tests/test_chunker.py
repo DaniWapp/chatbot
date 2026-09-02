@@ -49,3 +49,37 @@ def test_page_numbers_are_preserved_across_pages():
 
     pages = {c.page for c in chunks}
     assert pages == {1, 2}
+
+
+def test_tabular_document_produces_one_chunk_per_row():
+    """Cada fila de una hoja de cálculo debe quedar como su propio chunk,
+    nunca agrupada con otras filas (evita diluir la búsqueda semántica de
+    un registro específico, como pasó con el caso real del horario)."""
+    rows_text = "\n".join(
+        [
+            "Materia: Cálculo Diferencial | Día: Lunes | Salón: A101",
+            "Materia: Álgebra Lineal | Día: Martes | Salón: A102",
+            "Materia: Bases de Datos | Día: Viernes | Salón: A205",
+        ]
+    )
+    doc = LoadedDocument(
+        filename="horario.xlsx",
+        pages=[PageText(page_number=1, text=rows_text)],
+        is_tabular=True,
+    )
+
+    chunks = chunk_document(doc, chunk_size=1000, overlap=150)
+
+    assert len(chunks) == 3
+    assert all("Materia:" in c.text and "\n" not in c.text for c in chunks)
+
+
+def test_non_tabular_document_still_packs_by_character_size():
+    """Confirma que el chunking normal (no tabular) no se vio afectado por
+    el chunking especial de filas."""
+    long_text = "Esta es una oración de prueba. " * 200
+    doc = LoadedDocument(filename="largo.txt", pages=[PageText(page_number=1, text=long_text)])
+
+    chunks = chunk_document(doc, chunk_size=1000, overlap=150)
+
+    assert len(chunks) > 1

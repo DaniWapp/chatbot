@@ -45,10 +45,23 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     return chunks
 
 
+def _pack_rows(text: str) -> List[str]:
+    """Cada fila de una hoja de cálculo (una línea) se convierte en su propio
+    fragmento. No se agrupan varias filas en un mismo chunk: cada fila es un
+    registro independiente que un usuario puede consultar de forma puntual
+    (una materia, un horario, un salón). Agruparlas diluiría la búsqueda
+    semántica de la misma forma que ocurría al mezclar varias preguntas de
+    un FAQ en un solo fragmento."""
+    return [line for line in text.split("\n") if line.strip()]
+
+
 def chunk_document(document: LoadedDocument, chunk_size: int, overlap: int) -> List[Chunk]:
     chunks: List[Chunk] = []
     for page in document.pages:
-        fragments = _split_text(page.text, chunk_size, overlap)
+        if document.is_tabular:
+            fragments = _pack_rows(page.text)
+        else:
+            fragments = _split_text(page.text, chunk_size, overlap)
         for idx, fragment in enumerate(fragments):
             raw_id = f"{document.filename}-p{page.page_number}-{idx}"
             chunk_id = hashlib.md5(raw_id.encode("utf-8")).hexdigest()[:16]
