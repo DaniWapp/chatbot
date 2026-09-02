@@ -173,6 +173,18 @@ http://localhost:8000/docs
 3. Reinicia el backend (`iniciar.bat`) si ya estaba corriendo, para que
    cargue el índice actualizado.
 
+### Consejo: datos puntuales que quedan "enterrados"
+
+Si un dato corto y específico (una ubicación, un teléfono, un correo) está
+mezclado dentro de un documento largo con muchos otros temas, el chunking por
+tamaño fijo puede agruparlo junto a contenido no relacionado y diluir su
+similitud semántica — el chatbot podría no encontrarlo aunque sí esté en los
+documentos. **No se soluciona bajando `SIMILARITY_THRESHOLD`** (eso deja
+pasar también preguntas que deben rechazarse, como precios que no existen en
+los documentos). La solución correcta es mantener esos datos puntuales como
+su propio documento corto o en una sección claramente delimitada, en vez de
+mezclarlos con contenido extenso de otro tema.
+
 También existe el endpoint `POST /api/ingest`, que reconstruye el índice sin
 necesidad de detener el servidor (útil para una futura interfaz de
 administración, aunque para el uso normal se recomienda el script).
