@@ -1,0 +1,24 @@
+# Entorno y secretos
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Base vectorial (se regenera con scripts/ingest.py)
+vector_db/
+vector_db_test/
+
+# Modelos descargados en caché (Sentence Transformers)
+.cache/
+
+# Reportes de evaluación
+evaluation/last_report.json
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Tests
+.pytest_cache/

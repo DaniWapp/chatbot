@@ -1,0 +1,72 @@
+[
+  {
+    "id": "q1",
+    "question": "¿Cuáles son los requisitos para graduarme?",
+    "expected_answer_contains": ["trabajo de grado", "paz y salvo"],
+    "expected_source": "Reglamento_Estudiantil_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q2",
+    "question": "¿Puedo cancelar una asignatura después de la semana 6?",
+    "expected_answer_contains": ["médica", "fuerza mayor"],
+    "expected_source": "Reglamento_Estudiantil_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q3",
+    "question": "¿Cuántos créditos puedo matricular como máximo?",
+    "expected_answer_contains": ["18", "21"],
+    "expected_source": "Reglamento_Estudiantil_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q4",
+    "question": "¿Cuándo empiezan las matrículas ordinarias?",
+    "expected_answer_contains": ["20 de julio"],
+    "expected_source": "Calendario_Academico_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q5",
+    "question": "¿Qué requisitos necesito para hacer prácticas profesionales?",
+    "expected_answer_contains": ["80%", "créditos", "480"],
+    "expected_source": "Reglamento_Estudiantil_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q6",
+    "question": "¿Dónde puedo solicitar un certificado de notas?",
+    "expected_answer_contains": ["Registro y Control Académico"],
+    "expected_source": "Calendario_Academico_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q7",
+    "question": "¿Qué materias tiene el primer semestre de Ingeniería de Sistemas?",
+    "expected_answer_contains": ["Cálculo Diferencial", "Programación"],
+    "expected_source": "Preguntas_Frecuentes_EJEMPLO.txt",
+    "should_have_info": true
+  },
+  {
+    "id": "q8_no_info",
+    "question": "¿Cuál será el calendario académico del año 2030?",
+    "expected_answer_contains": [],
+    "expected_source": null,
+    "should_have_info": false
+  },
+  {
+    "id": "q9_no_info",
+    "question": "¿Cuál es el equipo de fútbol favorito del decano?",
+    "expected_answer_contains": [],
+    "expected_source": null,
+    "should_have_info": false
+  },
+  {
+    "id": "q10_no_info",
+    "question": "¿Cuánto cuesta la matrícula en dólares?",
+    "expected_answer_contains": [],
+    "expected_source": null,
+    "should_have_info": false
+  }
+]

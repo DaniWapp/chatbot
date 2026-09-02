@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asistente Virtual - Facultad de Ingeniería</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="header-title">
+        <span class="header-icon">🎓</span>
+        <div>
+          <h1>Asistente Virtual</h1>
+          <p>Facultad de Ingeniería</p>
+        </div>
+      </div>
+      <span id="status-badge" class="status-badge" title="Estado del servidor">●</span>
+    </header>
+
+    <main id="chat-window" class="chat-window">
+      <div id="empty-state" class="empty-state">
+        <p class="empty-icon">💬</p>
+        <p>Pregúntame sobre reglamentos, matrículas, calendario académico, requisitos de grado y más.</p>
+        <div class="suggestions">
+          <button class="suggestion-chip" type="button">¿Cuáles son los requisitos para graduarme?</button>
+          <button class="suggestion-chip" type="button">¿Cuándo empiezan las matrículas?</button>
+          <button class="suggestion-chip" type="button">¿Puedo cancelar una asignatura?</button>
+          <button class="suggestion-chip" type="button">¿Cuántos créditos puedo matricular?</button>
+        </div>
+      </div>
+    </main>
+
+    <form id="chat-form" class="chat-input-bar">
+      <input
+        id="message-input"
+        type="text"
+        placeholder="Escribe tu pregunta..."
+        autocomplete="off"
+        maxlength="2000"
+      />
+      <button id="send-button" type="submit">Enviar</button>
+    </form>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
