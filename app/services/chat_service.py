@@ -15,10 +15,20 @@ from app.services import history as history_service
 # no tiene sentido evaluarlos contra el umbral de relevancia (eso llevaría a
 # responder "no encontré información" ante un simple "hola").
 _GREETING_RE = re.compile(
-    r"^(hola+|buen[oa]s?(\s+d[ií]as?|\s+tardes?|\s+noches?)?|hey|qu[eé]\s*tal|saludos|hi|hello)"
-    r"[\s!.,¡¿?]*$",
+    r"^("
+    r"hol[ai]+s?"                                          # hola, holis, holaa, holii...
+    r"|ol[ai]+s?"                                           # ola, olis (sin "h")
+    r"|buen[oa]s?(\s+d[ií]as?|\s+tardes?|\s+noches?)?"      # buenas, buenos días...
+    r"|hey+|ey+"                                            # hey, ey
+    r"|qu?[eé]?\s*(tal|más|mas|hubo|onda)"                  # qué tal, qué más, q hubo, qué onda
+    r"|qui?ubo|quihubo"                                     # quiubo, quihubo
+    r"|saludos|hi|hello"
+    r")[\s!.,¡¿?]*$",
     re.IGNORECASE,
 )
+# Cubre las variantes coloquiales más comunes en español, no todas las
+# posibles (es una lista, no un modelo de lenguaje): si aparece una nueva
+# variante frecuente durante las pruebas, se agrega aquí.
 _THANKS_RE = re.compile(r"^(muchas\s+|mil\s+)?gracias[\s!.,¡¿?]*$", re.IGNORECASE)
 
 _GREETING_REPLY = (
