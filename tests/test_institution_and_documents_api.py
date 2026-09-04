@@ -19,11 +19,11 @@ def _fake_embed_texts(texts):
     return [[0.1, 0.2, 0.3] for _ in texts]
 
 
-def _login_as(role="root", password="clave-segura-123"):
+def _login_as(role="root", password="clave-segura-123", dependencia_id=None):
     global _counter
     _counter += 1
     username = f"test-inst-doc-{role}-{_counter}"
-    admin_service.create_admin(username, password, f"Admin {role}", role)
+    admin_service.create_admin(username, password, f"Admin {role}", role, dependencia_id)
     res = client.post("/api/auth/login", json={"username": username, "password": password})
     return res.json()["token"]
 
@@ -133,3 +133,137 @@ def test_document_upload_rejects_disallowed_extension(tmp_path, monkeypatch):
     )
 
     assert res.status_code == 400
+
+
+# --- /api/admin/documents: general (paridad con root) y dependencia (solo lo suyo) ---
+
+
+def _upload_via_panel(token, filename, content=b"Contenido de prueba con suficiente longitud.", dependencia_id=None):
+    data = {}
+    if dependencia_id is not None:
+        data["dependencia_id"] = str(dependencia_id)
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        return client.post(
+            "/api/admin/documents",
+            files={"file": (filename, content, "text/plain")},
+            data=data,
+            headers=_auth(token),
+        )
+
+
+def test_dependencia_admin_upload_ignores_submitted_dependencia_and_forces_own(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep Panel Docs", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    other_dep = client.post(
+        "/api/root/dependencias", json={"name": "Otra Dep Panel Docs", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_token = _login_as(role="dependencia", dependencia_id=dep["id"])
+
+    # Intenta subirlo etiquetado a OTRA dependencia -- debe ignorarse y forzar la suya.
+    res = _upload_via_panel(dep_token, "dep-doc.txt", dependencia_id=other_dep["id"])
+    assert res.status_code == 200
+
+    from app.services import ingest_service
+
+    assert ingest_service.get_document_dependencia("dep-doc.txt") == dep["id"]
+
+
+def test_dependencia_admin_sees_only_own_documents(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep Visibilidad", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_token = _login_as(role="dependencia", dependencia_id=dep["id"])
+    general_token = _login_as(role="general")
+
+    _upload_via_panel(dep_token, "propio.txt")
+    _upload_via_panel(general_token, "de-otro.txt")  # general/compartido, no de esta dependencia
+
+    dep_list = client.get("/api/admin/documents", headers=_auth(dep_token)).json()
+    filenames = {d["filename"] for d in dep_list}
+    assert "propio.txt" in filenames
+    assert "de-otro.txt" not in filenames
+
+    general_list = client.get("/api/admin/documents", headers=_auth(general_token)).json()
+    general_filenames = {d["filename"] for d in general_list}
+    assert {"propio.txt", "de-otro.txt"}.issubset(general_filenames)
+
+
+def test_dependencia_admin_cannot_delete_document_of_another_dependencia(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep_a = client.post(
+        "/api/root/dependencias", json={"name": "Dep A Docs", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_b = client.post(
+        "/api/root/dependencias", json={"name": "Dep B Docs", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    token_a = _login_as(role="dependencia", dependencia_id=dep_a["id"])
+    token_b = _login_as(role="dependencia", dependencia_id=dep_b["id"])
+
+    _upload_via_panel(token_a, "solo-a.txt")
+
+    res = client.delete("/api/admin/documents/solo-a.txt", headers=_auth(token_b))
+    assert res.status_code == 403
+
+    res_owner = client.delete("/api/admin/documents/solo-a.txt", headers=_auth(token_a))
+    assert res_owner.status_code == 200
+
+
+def test_dependencia_admin_cannot_recategorize():
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep No Recategoriza", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_token = _login_as(role="dependencia", dependencia_id=dep["id"])
+
+    res = client.put(
+        "/api/admin/documents/algo.txt", json={"dependencia_id": None}, headers=_auth(dep_token)
+    )
+
+    assert res.status_code == 403
+
+
+def test_general_admin_can_recategorize_and_delete_any_document(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep General Parity", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    general_token = _login_as(role="general")
+
+    _upload_via_panel(general_token, "general-parity.txt", dependencia_id=dep["id"])
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        recategorize_res = client.put(
+            "/api/admin/documents/general-parity.txt", json={"dependencia_id": None}, headers=_auth(general_token)
+        )
+    assert recategorize_res.status_code == 200
+
+    delete_res = client.delete("/api/admin/documents/general-parity.txt", headers=_auth(general_token))
+    assert delete_res.status_code == 200
+
+
+def test_admin_documents_requires_authentication():
+    res = client.get("/api/admin/documents")
+    assert res.status_code == 401

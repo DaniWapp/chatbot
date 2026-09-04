@@ -31,6 +31,9 @@ const askBotDiscardButtonEl = document.getElementById("ask-bot-discard");
 const wsStatusEl = document.getElementById("ws-status");
 const panelBodyEl = document.querySelector(".panel-body");
 const backToListButton = document.getElementById("back-to-list");
+const documentsButtonEl = document.getElementById("documents-button");
+const modalOverlayEl = document.getElementById("modal-overlay");
+const modalContentEl = document.getElementById("modal-content");
 
 const SENDER_LABELS = { student: "Estudiante", assistant: "Asistente", advisor: "Asesor" };
 
@@ -119,6 +122,10 @@ async function tryEnterPanel() {
     await loadSessions();
     await loadDependenciasForReassign();
     adminDisplayNameEl.textContent = localStorage.getItem("admin_display_name") || "";
+    // El root no llega a /panel (require_conversation_admin lo bloquea), así
+    // que este botón siempre aplica para quien sí logra entrar aquí: general
+    // (paridad con root en documentos) o dependencia (solo los suyos).
+    documentsButtonEl.hidden = false;
     authGateEl.hidden = true;
     panelAppEl.hidden = false;
     connectWebSocket();
@@ -126,6 +133,209 @@ async function tryEnterPanel() {
     // adminFetch ya mostró el auth-gate con el mensaje de error si la sesión era inválida.
   }
 }
+
+// --- Modal genérico ------------------------------------------------------
+
+function openModal(html) {
+  modalContentEl.innerHTML = html;
+  modalOverlayEl.hidden = false;
+  const cancelButton = modalContentEl.querySelector(".cancel-button");
+  if (cancelButton) cancelButton.addEventListener("click", closeModal);
+}
+
+function closeModal() {
+  modalOverlayEl.hidden = true;
+  modalContentEl.innerHTML = "";
+}
+
+modalOverlayEl.addEventListener("click", (e) => {
+  if (e.target === modalOverlayEl) closeModal();
+});
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function errorDetail(res) {
+  const body = await res.json().catch(() => ({}));
+  if (Array.isArray(body.detail)) {
+    return body.detail.map((d) => d.msg).join(" ") || "Ocurrió un error.";
+  }
+  return body.detail || "Ocurrió un error.";
+}
+
+// --- Documentos (modal): general con paridad de root, dependencia solo lo suyo ---
+
+function dependenciaNameById(id) {
+  const dep = dependenciasForReassign.find((d) => d.id === id);
+  return dep ? dep.name : "—";
+}
+
+function documentDependenciaOptionsHtml(selectedId) {
+  const generalOption = `<option value="" ${selectedId == null ? "selected" : ""}>General / compartido</option>`;
+  const depOptions = dependenciasForReassign
+    .map((d) => `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${escapeHtml(d.name)}</option>`)
+    .join("");
+  return generalOption + depOptions;
+}
+
+async function openDocumentsModal() {
+  const isGeneral = getAdminRole() === "general";
+  let documents = [];
+  try {
+    const res = await adminFetch("/api/admin/documents");
+    documents = await res.json();
+  } catch {
+    return; // adminFetch ya maneja el caso de sesión inválida.
+  }
+
+  const rowsHtml = documents
+    .map((doc) => {
+      const depCell = isGeneral ? `<td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>` : "";
+      const recategorizeControl = isGeneral
+        ? `<select class="doc-dependencia-select" data-filename="${escapeHtml(doc.filename)}">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select>`
+        : "";
+      return `
+        <tr>
+          <td>${escapeHtml(doc.filename)}</td>
+          <td>${formatSize(doc.size_bytes)}</td>
+          ${depCell}
+          <td>
+            <div class="row-actions">
+              ${recategorizeControl}
+              <button type="button" class="danger delete-doc-button" data-filename="${escapeHtml(doc.filename)}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  openModal(`
+    <div class="panel-section-header">
+      <h3>Documentos${isGeneral ? "" : " de tu dependencia"}</h3>
+      <button type="button" id="panel-new-document-button" class="primary-button">+ Subir documento</button>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Archivo</th>
+          <th>Tamaño</th>
+          ${isGeneral ? "<th>Dependencia</th>" : ""}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="panel-documents-table-body">${rowsHtml}</tbody>
+    </table>
+    <p id="panel-documents-empty" class="empty-hint" ${documents.length ? "hidden" : ""}>Todavía no hay documentos.</p>
+    <div class="modal-actions">
+      <button type="button" class="cancel-button">Cerrar</button>
+    </div>
+  `);
+
+  modalContentEl.querySelectorAll(".delete-doc-button").forEach((button) => {
+    button.addEventListener("click", () => deletePanelDocument(button.dataset.filename));
+  });
+  if (isGeneral) {
+    modalContentEl.querySelectorAll(".doc-dependencia-select").forEach((select) => {
+      select.addEventListener("change", () => recategorizePanelDocument(select.dataset.filename, select));
+    });
+  }
+
+  document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
+}
+
+function openUploadDocumentModal() {
+  const isGeneral = getAdminRole() === "general";
+  openModal(`
+    <h3>Subir documento</h3>
+    <form id="panel-upload-document-form" class="modal-form">
+      <label>Archivo (PDF, TXT, DOCX o XLSX)
+        <input id="panel-upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />
+      </label>
+      ${
+        isGeneral
+          ? `<label>Dependencia (opcional)
+              <select id="panel-upload-document-dependencia">${documentDependenciaOptionsHtml(null)}</select>
+            </label>`
+          : ""
+      }
+      <p id="panel-upload-document-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button">Cancelar</button>
+        <button type="submit" class="primary-button">Subir</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById("panel-upload-document-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("panel-upload-document-error");
+    const fileInput = document.getElementById("panel-upload-document-file");
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const submitButton = e.target.querySelector("button[type=submit]");
+    submitButton.disabled = true;
+    submitButton.textContent = "Subiendo...";
+
+    const formData = new FormData();
+    formData.append("file", file);
+    if (isGeneral) {
+      const dependenciaValue = document.getElementById("panel-upload-document-dependencia").value;
+      if (dependenciaValue) formData.append("dependencia_id", dependenciaValue);
+    }
+    // Si es administrador de dependencia, no se manda dependencia_id -- el
+    // backend fuerza la suya siempre, ignorando cualquier otro valor.
+
+    try {
+      const res = await adminFetch("/api/admin/documents", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(await errorDetail(res));
+      await openDocumentsModal();
+    } catch (err) {
+      errorEl.textContent = err.message || "No se pudo subir el documento.";
+      errorEl.hidden = false;
+      submitButton.disabled = false;
+      submitButton.textContent = "Subir";
+    }
+  });
+}
+
+async function recategorizePanelDocument(filename, selectEl) {
+  const dependenciaId = selectEl.value === "" ? null : Number(selectEl.value);
+  selectEl.disabled = true;
+  try {
+    const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dependencia_id: dependenciaId }),
+    });
+    if (!res.ok) alert(await errorDetail(res));
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  } finally {
+    await openDocumentsModal();
+  }
+}
+
+async function deletePanelDocument(filename) {
+  if (!confirm(`¿Eliminar "${filename}"? También se quita del índice.`)) return;
+  try {
+    const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert(await errorDetail(res));
+      return;
+    }
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  } finally {
+    await openDocumentsModal();
+  }
+}
+
+documentsButtonEl.addEventListener("click", openDocumentsModal);
 
 authFormEl.addEventListener("submit", async (e) => {
   e.preventDefault();

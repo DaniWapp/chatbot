@@ -721,7 +721,7 @@ async def update_institution_route(
     return InstitutionResponse(name=data["name"], extra_info=data["extra_info"], logo_url=logo_url)
 
 
-# --- Root: documentos (subida con etiqueta de dependencia) ---------------
+# --- Documentos: lógica compartida entre root y el panel (general/dependencia) ---
 
 
 def _ingest_result_to_response(result) -> IngestResponse:
@@ -733,8 +733,7 @@ def _ingest_result_to_response(result) -> IngestResponse:
     )
 
 
-@router.get("/root/documents", response_model=List[DocumentInfo], dependencies=[Depends(require_root)])
-def list_documents_route() -> List[DocumentInfo]:
+def _list_documents() -> List[DocumentInfo]:
     return [
         DocumentInfo(
             filename=path.name,
@@ -745,21 +744,18 @@ def list_documents_route() -> List[DocumentInfo]:
     ]
 
 
-@router.post("/root/documents", response_model=IngestResponse, dependencies=[Depends(require_root)])
-async def upload_document_route(
-    file: UploadFile = File(...),
-    dependencia_id: Optional[int] = Form(default=None),
-) -> IngestResponse:
+def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional[int]) -> IngestResponse:
     """Sube un documento a DOCUMENTS_DIR, lo etiqueta con una dependencia
-    (opcional -- sin etiqueta queda como general/compartido) y lo ingesta
-    de forma incremental: solo se calculan embeddings de este archivo, sin
-    tocar el resto del índice (ver ingest_service.ingest_single_file)."""
-    filename = Path(file.filename).name  # descarta cualquier ruta de directorio en el nombre
+    (None -- general/compartido) y lo ingesta de forma incremental: solo se
+    calculan embeddings de este archivo, sin tocar el resto del índice (ver
+    ingest_service.ingest_single_file). Usada tanto por la ruta exclusiva
+    de root como por la del panel (general/dependencia) -- el control de
+    quién puede elegir qué dependencia vive en cada ruta, no aquí."""
+    filename = Path(raw_filename).name  # descarta cualquier ruta de directorio en el nombre
     ext = Path(filename).suffix.lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Extensión no permitida: {ext}")
 
-    content = await file.read()
     if len(content) > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
         raise HTTPException(
             status_code=400, detail=f"El archivo supera el tamaño máximo ({settings.MAX_FILE_SIZE_MB} MB)."
@@ -774,8 +770,7 @@ async def upload_document_route(
     return _ingest_result_to_response(result)
 
 
-@router.put("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
-def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequest) -> IngestResponse:
+def _recategorize_document(filename: str, dependencia_id: Optional[int]) -> IngestResponse:
     """Cambia la dependencia de un documento ya subido. El contenido no
     cambió, pero sus chunks llevan la etiqueta vieja, así que igual hay que
     reingestarlo (solo a él, no todo el índice) para que quede con la
@@ -784,13 +779,12 @@ def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequ
     path = settings.DOCUMENTS_DIR / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="No existe ese documento.")
-    ingest_service.set_document_dependencia(safe_name, payload.dependencia_id)
-    result = ingest_service.ingest_single_file(path, payload.dependencia_id, log=lambda *_: None)
+    ingest_service.set_document_dependencia(safe_name, dependencia_id)
+    result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
     return _ingest_result_to_response(result)
 
 
-@router.delete("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
-def delete_document_route(filename: str) -> IngestResponse:
+def _delete_document(filename: str) -> None:
     safe_name = Path(filename).name
     path = settings.DOCUMENTS_DIR / safe_name
     if not path.exists():
@@ -798,6 +792,93 @@ def delete_document_route(filename: str) -> IngestResponse:
     path.unlink()
     ingest_service.delete_document_dependencia(safe_name)
     vector_store.remove_document(safe_name)
+
+
+# --- Root: documentos (sin restricción de dependencia) --------------------
+
+
+@router.get("/root/documents", response_model=List[DocumentInfo], dependencies=[Depends(require_root)])
+def list_documents_route() -> List[DocumentInfo]:
+    return _list_documents()
+
+
+@router.post("/root/documents", response_model=IngestResponse, dependencies=[Depends(require_root)])
+async def upload_document_route(
+    file: UploadFile = File(...),
+    dependencia_id: Optional[int] = Form(default=None),
+) -> IngestResponse:
+    content = await file.read()
+    return _upload_document(content, file.filename, dependencia_id)
+
+
+@router.put("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
+def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequest) -> IngestResponse:
+    return _recategorize_document(filename, payload.dependencia_id)
+
+
+@router.delete("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
+def delete_document_route(filename: str) -> IngestResponse:
+    _delete_document(filename)
+    return IngestResponse(status="ok", documents_processed=0, chunks_created=0, errors=[])
+
+
+# --- Documentos desde /panel: general (paridad con root) y dependencia (solo lo suyo) ---
+
+
+@router.get("/admin/documents", response_model=List[DocumentInfo], dependencies=[Depends(require_conversation_admin)])
+def list_documents_for_panel(identity: AdminIdentity = Depends(require_conversation_admin)) -> List[DocumentInfo]:
+    """El general ve todos los documentos, igual que root. Un administrador
+    de dependencia solo ve los etiquetados con la suya -- no sabe siquiera
+    que existen los de otras dependencias o los generales/compartidos."""
+    documents = _list_documents()
+    if identity.role == "dependencia":
+        documents = [d for d in documents if d.dependencia_id == identity.dependencia_id]
+    return documents
+
+
+@router.post("/admin/documents", response_model=IngestResponse, dependencies=[Depends(require_conversation_admin)])
+async def upload_document_for_panel(
+    file: UploadFile = File(...),
+    dependencia_id: Optional[int] = Form(default=None),
+    identity: AdminIdentity = Depends(require_conversation_admin),
+) -> IngestResponse:
+    """Un administrador de dependencia no elige dependencia -- se ignora
+    cualquier valor que mande el formulario y se fuerza la suya, para que
+    nunca pueda etiquetar un documento como de otra dependencia o como
+    general/compartido. El general sí puede elegir cualquiera, igual que root."""
+    effective_dependencia_id = identity.dependencia_id if identity.role == "dependencia" else dependencia_id
+    content = await file.read()
+    return _upload_document(content, file.filename, effective_dependencia_id)
+
+
+@router.put(
+    "/admin/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_conversation_admin)]
+)
+def recategorize_document_for_panel(
+    filename: str, payload: DocumentRecategorizeRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> IngestResponse:
+    """Recategorizar (cambiar la dependencia de un documento ya subido) no
+    forma parte del alcance aprobado para administradores de dependencia --
+    solo el general puede hacerlo desde el panel (igual que root)."""
+    if identity.role != "general":
+        raise HTTPException(status_code=403, detail="Solo el administrador general puede recategorizar documentos.")
+    return _recategorize_document(filename, payload.dependencia_id)
+
+
+@router.delete(
+    "/admin/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_conversation_admin)]
+)
+def delete_document_for_panel(
+    filename: str, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> IngestResponse:
+    """El general puede eliminar cualquier documento, igual que root. Un
+    administrador de dependencia solo puede eliminar los etiquetados con la
+    suya."""
+    if identity.role == "dependencia":
+        safe_name = Path(filename).name
+        if ingest_service.get_document_dependencia(safe_name) != identity.dependencia_id:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este documento.")
+    _delete_document(filename)
     return IngestResponse(status="ok", documents_processed=0, chunks_created=0, errors=[])
 
 

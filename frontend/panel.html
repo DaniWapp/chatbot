@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=27" />
+  <link rel="stylesheet" href="/static/panel.css?v=28" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -29,6 +29,7 @@
       </div>
       <div class="header-actions">
         <span id="ws-status" class="ws-status offline">Conectando</span>
+        <button id="documents-button" class="logout-button" type="button" hidden>Documentos</button>
         <button id="logout-button" class="logout-button" type="button">Cerrar sesión</button>
       </div>
     </header>
@@ -89,6 +90,10 @@
     </div>
   </div>
 
-  <script src="/static/panel.js?v=26"></script>
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div id="modal-content" class="modal-content"></div>
+  </div>
+
+  <script src="/static/panel.js?v=27"></script>
 </body>
 </html>
