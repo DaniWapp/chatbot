@@ -17,6 +17,13 @@ os.environ.setdefault("HISTORY_DB_PATH", "history_test.db")
 # min) las pruebas empiezan a chocar entre sí con 429 mucho antes de que
 # sea sospechoso de un ataque real.
 os.environ.setdefault("LOGIN_RATE_LIMIT_MAX", "1000")
+# Mismo motivo: el limitador de tasa de Groq es un único objeto compartido
+# por todo el proceso (ver app/rag/rate_limiter.py). Groq mismo ya está
+# mockeado en las pruebas, pero el limitador no sabe eso -- sin este ajuste,
+# suficientes pruebas que pasen por app.rag.llm dentro de la misma ventana
+# de 60s del proceso de pytest empezarían a dormir de verdad.
+os.environ.setdefault("GROQ_MAX_REQUESTS_PER_MINUTE", "100000")
+os.environ.setdefault("GROQ_MAX_TOKENS_PER_MINUTE", "100000000")
 
 import pytest  # noqa: E402
 

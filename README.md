@@ -120,6 +120,32 @@ típica de empresas de hardware/infraestructura:
   vigentes en https://console.groq.com/docs/rate-limits antes de asumir que
   se mantendrán igual.
 
+### Autolímite de peticiones a Groq (para no exceder el plan gratuito)
+
+Para `openai/gpt-oss-20b` el plan gratuito permite 30 peticiones/minuto y
+8000 tokens/minuto (además de límites diarios más altos, rara vez el
+problema real). Como el proyecto hace más de una llamada a Groq por acción
+en algunos casos (por ejemplo, responder + sugerir preguntas alternativas
+si no hay información suficiente), y varios usuarios pueden escribir casi
+al mismo tiempo, `app/rag/rate_limiter.py` implementa un limitador de tasa
+propio, compartido por todas las funciones de `app/rag/llm.py`
+(`_create_completion`, el único punto de salida hacia la API de Groq en
+todo el módulo):
+
+- Antes de cada llamada, si ya no hay margen dentro de la ventana del
+  último minuto (por peticiones o por tokens estimados), la llamada
+  simplemente **espera su turno** (con `time.sleep`) en vez de salir y
+  arriesgarse a que Groq la rechace con un error 429.
+- Por defecto opera con margen de seguridad por debajo del límite real
+  (`GROQ_MAX_REQUESTS_PER_MINUTE=20`, `GROQ_MAX_TOKENS_PER_MINUTE=6000`,
+  configurables en `.env`) -- deja espacio para picos breves, pruebas
+  manuales, u otra fuente que use la misma cuenta sin pasar por este
+  limitador.
+- Es deliberadamente bloqueante y no asíncrono: todas las rutas que llaman
+  a Groq en este proyecto son funciones síncronas de FastAPI, que ya corren
+  en el threadpool del servidor -- el `sleep` solo bloquea ese hilo de
+  trabajo puntual, no el servidor completo.
+
 ## 6. Instalación (Windows, paso a paso)
 
 ### 6.1. Instalar Python
@@ -317,6 +343,9 @@ Toda la configuración vive en `.env` (ver `.env.example` para la lista
 completa y sus valores por defecto):
 
 - `GROQ_API_KEY`, `GROQ_MODEL`: credenciales y modelo del LLM.
+- `GROQ_MAX_REQUESTS_PER_MINUTE`, `GROQ_MAX_TOKENS_PER_MINUTE`: autolímite
+  interno para no exceder el plan gratuito de Groq (ver "Autolímite de
+  peticiones a Groq" en la sección 5).
 - `EMBEDDING_MODEL`: modelo local de embeddings.
 - `TOP_K`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `SIMILARITY_THRESHOLD`: parámetros
   del pipeline RAG.

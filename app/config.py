@@ -22,6 +22,13 @@ class Settings:
     # --- Groq ---
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    # Límite real del plan gratuito para openai/gpt-oss-20b: 30 peticiones/min
+    # y 8000 tokens/min (ver https://console.groq.com/docs/rate-limits). Se
+    # opera por debajo de eso a propósito -- deja margen para picos breves,
+    # pruebas manuales, u otra fuente que use la misma cuenta sin pasar por
+    # este limitador.
+    GROQ_MAX_REQUESTS_PER_MINUTE: int = _get_int("GROQ_MAX_REQUESTS_PER_MINUTE", 20)
+    GROQ_MAX_TOKENS_PER_MINUTE: int = _get_int("GROQ_MAX_TOKENS_PER_MINUTE", 6000)
 
     # --- Embeddings ---
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")

@@ -7,10 +7,37 @@ from typing import Generator, List, Optional, Tuple
 from groq import Groq
 
 from app.config import settings
+from app.rag.rate_limiter import GroqRateLimiter
 from app.rag.retriever import RetrievedChunk
 from app.services import admin_service
 
 logger = logging.getLogger(__name__)
+
+_rate_limiter = GroqRateLimiter(
+    max_requests_per_minute=settings.GROQ_MAX_REQUESTS_PER_MINUTE,
+    max_tokens_per_minute=settings.GROQ_MAX_TOKENS_PER_MINUTE,
+)
+
+
+def _estimate_tokens(messages: List[dict], max_completion_tokens: int) -> int:
+    """Estimación gruesa y deliberadamente generosa (mejor sobrestimar que
+    quedarse corto): ~4 caracteres por token es una aproximación común para
+    texto en español/inglés con tokenizadores tipo GPT, y se suma el tope
+    de tokens de salida que se le pidió al modelo -- no se sabe cuántos usará
+    realmente hasta que responde, así que se reserva el máximo posible."""
+    prompt_chars = sum(len(m.get("content", "") or "") for m in messages)
+    return (prompt_chars // 4) + max_completion_tokens
+
+
+def _create_completion(**kwargs):
+    """Único punto de salida hacia la API de Groq en todo el módulo: todas
+    las funciones de aquí abajo pasan por esta función para que el
+    limitador de tasa las controle a todas por igual (el límite de Groq es
+    por cuenta, no por función que lo llame) -- ver app/rag/rate_limiter.py."""
+    estimated_tokens = _estimate_tokens(kwargs.get("messages", []), kwargs.get("max_completion_tokens", 0))
+    _rate_limiter.acquire(estimated_tokens)
+    client = get_client()
+    return client.chat.completions.create(**kwargs)
 
 
 def _build_system_prompt() -> str:
@@ -113,9 +140,8 @@ _GENERATION_KWARGS = dict(
 
 
 def generate_answer(question: str, context: str, history: List[Tuple[str, str]]) -> str:
-    client = get_client()
     messages = build_messages(question, context, history)
-    completion = client.chat.completions.create(
+    completion = _create_completion(
         model=settings.GROQ_MODEL,
         messages=messages,
         **_GENERATION_KWARGS,
@@ -126,9 +152,8 @@ def generate_answer(question: str, context: str, history: List[Tuple[str, str]])
 def stream_answer(
     question: str, context: str, history: List[Tuple[str, str]]
 ) -> Generator[str, None, None]:
-    client = get_client()
     messages = build_messages(question, context, history)
-    stream = client.chat.completions.create(
+    stream = _create_completion(
         model=settings.GROQ_MODEL,
         messages=messages,
         stream=True,
@@ -180,8 +205,7 @@ def classify_department(
     )
 
     try:
-        client = get_client()
-        completion = client.chat.completions.create(
+        completion = _create_completion(
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
@@ -232,8 +256,7 @@ def suggest_clarifying_questions(question: str, candidates: List[RetrievedChunk]
     )
 
     try:
-        client = get_client()
-        completion = client.chat.completions.create(
+        completion = _create_completion(
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
@@ -278,8 +301,7 @@ def generate_faq_candidate(question: str, advisor_answers: List[str]) -> Optiona
     )
 
     try:
-        client = get_client()
-        completion = client.chat.completions.create(
+        completion = _create_completion(
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
@@ -331,8 +353,7 @@ def is_duplicate_faq(suggested_question: str, suggested_answer: str, similar_exi
     )
 
     try:
-        client = get_client()
-        completion = client.chat.completions.create(
+        completion = _create_completion(
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
