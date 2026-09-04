@@ -123,6 +123,27 @@ tengas.
   sistema puede proponerle al root (ver sección 4.5) agregarla como
   pregunta frecuente.
 
+### 2.6 Documentos (botón "Documentos" en el encabezado)
+
+Todo administrador (dependencia o general) puede subir y eliminar
+documentos directamente desde el panel, sin depender de root:
+
+1. Presiona **"Documentos"** en la parte superior del panel.
+2. Verás la lista de documentos que puedes gestionar:
+   - Si eres **administrador de dependencia**, solo ves (y puedes subir o
+     eliminar) los documentos etiquetados con **tu propia dependencia** —
+     no ves los de otras dependencias ni los generales/compartidos, y no
+     puedes elegir otra dependencia al subir: siempre queda etiquetado
+     con la tuya automáticamente.
+   - Si eres **general**, ves y administras **todos** los documentos de
+     todas las dependencias (igual que root), incluida la opción de
+     recategorizar (cambiar la dependencia de un documento ya subido).
+3. **"+ Subir documento"**: elige un archivo (PDF, TXT, DOCX o XLSX) y
+   confirma. Se indexa automáticamente en unos segundos — no hace falta
+   ningún paso adicional para que el chatbot empiece a usarlo.
+4. **"Eliminar"**: quita el documento y su contenido del índice del
+   chatbot de inmediato.
+
 ---
 
 ## 3. Administrador general: particularidades
@@ -139,6 +160,10 @@ diferencias respecto a un administrador de dependencia normal:
   la redirige automáticamente hacia el general (y notifica al estudiante
   que su solicitud se sigue gestionando) — es un respaldo automático, no
   requiere ninguna acción manual.
+- En el botón **"Documentos"** (ver 2.6), el general tiene exactamente las
+  mismas capacidades que root: ve todos los documentos de todas las
+  dependencias, puede subir eligiendo cualquier dependencia (o dejarlo
+  general/compartido), recategorizar y eliminar cualquiera.
 
 ---
 
