@@ -90,3 +90,28 @@ reales del proyecto):
 
 **Recomendación:** aplicar la conversión a PDF y DOCX únicamente (no
 XLSX), decidiendo antes si el original se descarta o se conserva aparte.
+
+### Implementado
+
+El usuario confirmó: **el archivo original se descarta** -- en el servidor
+solo se conservan los `.txt`. Implementado en
+`app/api/routes.py::_upload_document`:
+
+- PDF y DOCX: se extrae el texto con `document_loader.load_document()`
+  (la misma extracción que ya se usaba para indexar, sin cambios de
+  calidad), se guarda como `<nombre-original>.txt`, y el PDF/DOCX subido
+  se borra del servidor de inmediato -- no queda ninguna copia.
+- XLSX y TXT: sin cambios, se suben tal cual (ver matiz 2 arriba).
+- Si la extracción falla (PDF corrupto, etc.), se borra el archivo
+  temporal y se devuelve un error 400 -- no queda nada a medias.
+- La fuente citada al estudiante pasa a mostrar el nombre `.txt` (matiz 4
+  resuelto: se prefirió simplicidad sobre preservar el nombre original).
+- Caso borde no resuelto (poco probable, no bloqueante): si se suben
+  `Reporte.pdf` y `Reporte.docx` por separado, ambos generarían
+  `Reporte.txt` y el segundo reemplazaría al primero.
+
+Probado en vivo con un DOCX real (extremo a extremo: subida -> conversión
+-> el .docx no queda en el servidor -> el chatbot responde citando el
+.txt) y con pruebas automatizadas (DOCX real, PDF con extracción
+mockeada, fallo de extracción limpia el archivo temporal, XLSX/TXT sin
+cambios).

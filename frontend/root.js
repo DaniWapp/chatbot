@@ -673,6 +673,7 @@ async function deleteDocument(doc) {
 document.getElementById("new-document-button").addEventListener("click", () => {
   openModal(`
     <h3>Subir documento</h3>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos -- el archivo original no se conserva en el servidor, solo su contenido.</p>
     <form id="upload-document-form" class="modal-form">
       <label>Archivo (PDF, TXT, DOCX o XLSX)
         <input id="upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />

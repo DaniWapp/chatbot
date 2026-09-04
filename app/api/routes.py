@@ -746,13 +746,27 @@ def _list_documents() -> List[DocumentInfo]:
     ]
 
 
+# PDF y DOCX se convierten a texto plano al subirlos y el original se
+# descarta -- toda reingesta futura (reconstrucción completa, o solo este
+# archivo) vuelve a leer el .txt en vez de re-parsear el PDF/DOCX cada vez
+# (ver docs/notas-mejora-documentos.md: hasta 44x más lento que TXT, y un
+# PDF corrupto puede tardar +60s en cada reconstrucción). XLSX queda
+# excluido a propósito: el chunker indexa cada fila como su propio
+# fragmento (ver chunker.py::_pack_rows), algo atado a la extensión .xlsx
+# que se perdería si se convirtiera a .txt.
+_CONVERT_TO_TXT_EXTENSIONS = {".pdf", ".docx"}
+
+
 def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional[int]) -> IngestResponse:
     """Sube un documento a DOCUMENTS_DIR, lo etiqueta con una dependencia
     (None -- general/compartido) y lo ingesta de forma incremental: solo se
     calculan embeddings de este archivo, sin tocar el resto del índice (ver
     ingest_service.ingest_single_file). Usada tanto por la ruta exclusiva
     de root como por la del panel (general/dependencia) -- el control de
-    quién puede elegir qué dependencia vive en cada ruta, no aquí."""
+    quién puede elegir qué dependencia vive en cada ruta, no aquí.
+
+    Si el archivo es PDF o DOCX, se extrae su texto y se guarda como .txt
+    -- el original NO se conserva en el servidor (ver _CONVERT_TO_TXT_EXTENSIONS)."""
     filename = Path(raw_filename).name  # descarta cualquier ruta de directorio en el nombre
     ext = Path(filename).suffix.lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
@@ -764,9 +778,24 @@ def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional
         )
 
     settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = settings.DOCUMENTS_DIR / filename
-    path.write_bytes(content)
-    ingest_service.set_document_dependencia(filename, dependencia_id)
+    original_path = settings.DOCUMENTS_DIR / filename
+    original_path.write_bytes(content)
+
+    final_filename = filename
+    if ext in _CONVERT_TO_TXT_EXTENSIONS:
+        try:
+            document = load_document(original_path)
+        except DocumentLoadError as exc:
+            original_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=f"No se pudo procesar el documento: {exc}") from exc
+
+        extracted_text = "\n\n".join(page.text for page in document.pages).strip()
+        final_filename = original_path.stem + ".txt"
+        (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
+        original_path.unlink()  # solo se conserva el .txt
+
+    path = settings.DOCUMENTS_DIR / final_filename
+    ingest_service.set_document_dependencia(final_filename, dependencia_id)
 
     result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
     return _ingest_result_to_response(result)

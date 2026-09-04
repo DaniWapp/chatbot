@@ -274,6 +274,7 @@ function openUploadDocumentModal() {
   const ownDependenciaName = dependenciaNameById(getAdminDependenciaId());
   openModal(`
     <h3>Subir documento</h3>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos -- el archivo original no se conserva en el servidor, solo su contenido.</p>
     ${
       isGeneral
         ? ""

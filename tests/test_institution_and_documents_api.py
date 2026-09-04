@@ -354,3 +354,154 @@ def test_general_admin_can_preview_any_document(tmp_path, monkeypatch):
 
     res = client.get("/api/admin/documents/de-dependencia-preview.txt/preview", headers=_auth(general_token))
     assert res.status_code == 200
+
+
+# --- Conversión automática de PDF/DOCX a TXT al subir, sin conservar el original ---
+
+
+def test_upload_docx_converts_to_txt_and_discards_original(tmp_path, monkeypatch):
+    """Extremo a extremo con un DOCX real (sin mockear la extracción) --
+    confirma que solo queda el .txt, con el texto real del documento, y que
+    el .docx original no se conserva en el servidor."""
+    from docx import Document as DocxDocument
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    docx_bytes_path = tmp_path / "_source.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Contenido real de prueba para la conversión automática a texto plano.")
+    doc.save(str(docx_bytes_path))
+    content = docx_bytes_path.read_bytes()
+    docx_bytes_path.unlink()  # no hace parte del DOCUMENTS_DIR, solo se usó para generar los bytes
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Convertible.docx", content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert not (tmp_path / "Convertible.docx").exists()
+    txt_path = tmp_path / "Convertible.txt"
+    assert txt_path.exists()
+    assert "Contenido real de prueba" in txt_path.read_text(encoding="utf-8")
+
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    filenames = {d["filename"] for d in docs}
+    assert "Convertible.txt" in filenames
+    assert "Convertible.docx" not in filenames
+
+
+def test_upload_pdf_converts_to_txt_and_discards_original(tmp_path, monkeypatch):
+    """La extracción de PDF ya está cubierta a fondo en test_document_loader.py
+    -- aquí se mockea load_document para probar solo la lógica nueva de
+    conversión/descarte del original en la ruta de subida."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    from app.rag.document_loader import LoadedDocument, PageText
+
+    fake_document = LoadedDocument(
+        filename="Reporte.pdf", pages=[PageText(page_number=1, text="Texto extraído del PDF de prueba.")]
+    )
+
+    with (
+        patch("app.api.routes.load_document", return_value=fake_document),
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Reporte.pdf", b"%PDF-1.4 contenido falso, la extraccion esta mockeada", "application/pdf")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert not (tmp_path / "Reporte.pdf").exists()
+    txt_path = tmp_path / "Reporte.txt"
+    assert txt_path.exists()
+    assert txt_path.read_text(encoding="utf-8") == "Texto extraído del PDF de prueba."
+
+
+def test_upload_pdf_extraction_failure_cleans_up_original(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.rag.document_loader import DocumentLoadError
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with patch("app.api.routes.load_document", side_effect=DocumentLoadError("PDF corrupto de prueba")):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Corrupto.pdf", b"no es un pdf real", "application/pdf")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 400
+    assert not (tmp_path / "Corrupto.pdf").exists()
+    assert not (tmp_path / "Corrupto.txt").exists()
+
+
+def test_upload_xlsx_is_not_converted_to_txt(tmp_path, monkeypatch):
+    """XLSX se excluye a propósito de la conversión (ver
+    docs/notas-mejora-documentos.md): perdería el chunking por fila."""
+    from openpyxl import Workbook
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    xlsx_source = tmp_path / "_source.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Materia", "Día"])
+    ws.append(["Cálculo", "Lunes"])
+    wb.save(str(xlsx_source))
+    content = xlsx_source.read_bytes()
+    xlsx_source.unlink()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Horario.xlsx", content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert (tmp_path / "Horario.xlsx").exists()
+    assert not (tmp_path / "Horario.txt").exists()
+
+
+def test_upload_txt_is_unaffected_by_conversion(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("normal.txt", b"contenido de prueba suficientemente largo.", "text/plain")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert (tmp_path / "normal.txt").exists()
