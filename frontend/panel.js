@@ -226,9 +226,13 @@ async function openDocumentsModal() {
     })
     .join("");
 
+  const modalTitle = isGeneral
+    ? "Documentos"
+    : `Documentos de ${escapeHtml(dependenciaNameById(getAdminDependenciaId()))}`;
+
   openModal(`
     <div class="panel-section-header">
-      <h3>Documentos${isGeneral ? "" : " de tu dependencia"}</h3>
+      <h3>${modalTitle}</h3>
       <button type="button" id="panel-new-document-button" class="primary-button">+ Subir documento</button>
     </div>
     <table class="data-table">
@@ -262,8 +266,14 @@ async function openDocumentsModal() {
 
 function openUploadDocumentModal() {
   const isGeneral = getAdminRole() === "general";
+  const ownDependenciaName = dependenciaNameById(getAdminDependenciaId());
   openModal(`
     <h3>Subir documento</h3>
+    ${
+      isGeneral
+        ? ""
+        : `<p class="modal-hint">Se etiquetará automáticamente con tu dependencia: <strong>${escapeHtml(ownDependenciaName)}</strong>.</p>`
+    }
     <form id="panel-upload-document-form" class="modal-form">
       <label>Archivo (PDF, TXT, DOCX o XLSX)
         <input id="panel-upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />

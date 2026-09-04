@@ -728,6 +728,12 @@ body {
   font-size: 15px;
 }
 
+.modal-hint {
+  margin: -8px 0 16px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 .modal-form {
   display: flex;
   flex-direction: column;
