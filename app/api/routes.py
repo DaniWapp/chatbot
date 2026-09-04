@@ -54,6 +54,7 @@ from app.models.schemas import (
     SessionSummary,
 )
 from app.rag import llm, vector_store
+from app.rag.embeddings import embed_query
 from app.services import admin_service
 from app.services import chat_service
 from app.services import faq_service
@@ -162,13 +163,29 @@ def _broadcast_session_event(session_id: str, event: dict) -> None:
     ws_manager.broadcast_to_dependencia(dependencia_id, event)
 
 
+def _find_similar_accepted_faqs(question: str, top_k: int = 5) -> List[str]:
+    """Busca, entre los fragmentos ya indexados de archivos de FAQ
+    aceptadas (faq_generadas_*.txt -- cada fragmento es una entrada
+    completa "Pregunta: ... Respuesta: ...", ver app/rag/chunker.py), los
+    más parecidos a una propuesta nueva. Se usa como primer filtro barato
+    antes de pasarle los candidatos a llm.is_duplicate_faq -- no hace falta
+    mandarle al LLM TODAS las FAQ aceptadas, solo las pocas más cercanas
+    semánticamente."""
+    embedding = embed_query(question)
+    hits = vector_store.query(embedding, top_k=top_k)
+    return [h["text"] for h in hits if h["document"].startswith("faq_generadas_") and h["similarity"] >= 0.3]
+
+
 def _maybe_generate_faq_candidate(session_id: str) -> None:
     """Al resolver una conversación escalada, propone (best-effort) una
     entrada de preguntas frecuentes para que el root la revise en /root --
     ver app/rag/llm.py:generate_faq_candidate. No genera nada si nunca
     respondió un asesor de verdad (por ejemplo, se resolvió sin atención,
     o el único mensaje fue el chequeo automático "¿algo más?", que no es
-    una respuesta a la pregunta)."""
+    una respuesta a la pregunta), ni si la información ya existe como una
+    FAQ aceptada (ver llm.is_duplicate_faq) -- evita proponer duplicados
+    cuando la misma sesión (u otra) vuelve a generar una pregunta muy
+    parecida a una ya publicada, solo redactada distinto."""
     history_turns = history_service.get_history(session_id)
     if not history_turns:
         return
@@ -181,6 +198,10 @@ def _maybe_generate_faq_candidate(session_id: str) -> None:
 
     suggestion = llm.generate_faq_candidate(original_question, advisor_answers)
     if suggestion is None:
+        return
+
+    similar_existing = _find_similar_accepted_faqs(suggestion["question"])
+    if llm.is_duplicate_faq(suggestion["question"], suggestion["answer"], similar_existing):
         return
 
     dependencia_id = history_service.get_session_meta(session_id)["dependencia_id"]

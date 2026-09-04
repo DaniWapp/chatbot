@@ -296,3 +296,52 @@ def generate_faq_candidate(question: str, advisor_answers: List[str]) -> Optiona
     except Exception:
         logger.exception("Fallo generando una propuesta de FAQ")
         return None
+
+
+def is_duplicate_faq(suggested_question: str, suggested_answer: str, similar_existing: List[str]) -> bool:
+    """Antes de proponerle al root una FAQ nueva, revisa si ya es
+    esencialmente la misma información que alguna FAQ que YA fue aceptada
+    (pasada en `similar_existing` como los fragmentos de texto completos
+    "Pregunta: ... Respuesta: ..." ya indexados, encontrados por similitud
+    de embeddings -- ver _find_similar_accepted_faqs en app/api/routes.py).
+
+    Se usa al LLM como juez en vez de un umbral fijo de similitud de
+    embeddings: reconoce la misma información aunque esté redactada de
+    forma distinta a como se guardó (ver caso real: "¿Ofrecen la carrera de
+    Sistemas?" ya aceptada vs. "¿La facultad ofrece la carrera de
+    Ingeniería en Sistemas?" propuesta de nuevo por otra conversación), algo
+    que un corte numérico de similitud no separa con margen confiable en
+    este corpus.
+
+    Best-effort: ante cualquier fallo asume que NO es duplicado -- es
+    preferible que el root descarte manualmente una FAQ de más, a perder
+    una legítima por un error de esta verificación."""
+    if not similar_existing:
+        return False
+
+    existing_text = "\n".join(f"- {e}" for e in similar_existing)
+    prompt = (
+        "Vas a revisar si una propuesta de nueva pregunta frecuente (FAQ) es esencialmente la MISMA "
+        "información que alguna FAQ que YA está publicada, aunque esté redactada de forma distinta.\n\n"
+        f"PROPUESTA NUEVA:\nPregunta: {suggested_question}\nRespuesta: {suggested_answer}\n\n"
+        f"FAQ YA PUBLICADAS (posiblemente relacionadas):\n{existing_text}\n\n"
+        'Responde ÚNICAMENTE con JSON: {"is_duplicate": true} si la propuesta nueva no aporta '
+        'información distinta a alguna ya publicada, o {"is_duplicate": false} si es una '
+        "pregunta o información realmente diferente."
+    )
+
+    try:
+        client = get_client()
+        completion = client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_completion_tokens=50,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        return parsed.get("is_duplicate") is True
+    except Exception:
+        logger.exception("Fallo revisando si una propuesta de FAQ es duplicada")
+        return False

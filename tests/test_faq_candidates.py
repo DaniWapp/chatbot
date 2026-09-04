@@ -6,14 +6,23 @@ entrada al archivo de FAQ de la dependencia correspondiente + reingesta.
 classify_department, generate_faq_candidate, retrieve_context, embed_texts
 y vector_store se simulan: no se necesita una llamada real a Groq ni cargar
 el modelo de embeddings para probar esta lógica."""
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.rag import llm
 from app.services import admin_service
 from app.services import faq_service
 from app.services import history as history_service
+
+
+def _fake_client_returning(json_content):
+    fake_client = MagicMock()
+    completion = MagicMock()
+    completion.choices = [MagicMock(message=MagicMock(content=json_content))]
+    fake_client.chat.completions.create.return_value = completion
+    return fake_client
 
 client = TestClient(app)
 
@@ -57,7 +66,10 @@ def _escalate_and_resolve(session_id, dependencia_id, admin_token=None, advisor_
             f"/api/admin/sessions/{session_id}/reply", json={"message": advisor_message}, headers=_auth(admin_token)
         )
 
-    with patch("app.rag.llm.generate_faq_candidate", return_value=_FAKE_SUGGESTION) as mock_generate:
+    with (
+        patch("app.rag.llm.generate_faq_candidate", return_value=_FAKE_SUGGESTION) as mock_generate,
+        patch("app.api.routes._find_similar_accepted_faqs", return_value=[]),
+    ):
         if resolve_as == "advisor":
             assert admin_token, "resolve_as='advisor' requiere admin_token"
             client.post(f"/api/admin/sessions/{session_id}/resolve", headers=_auth(admin_token))
@@ -85,6 +97,40 @@ def test_resolving_without_any_advisor_reply_creates_no_candidate():
     mock_generate = _escalate_and_resolve(sid, None)
     mock_generate.assert_not_called()
 
+    pending = client.get("/api/root/faq-candidates?status=pending", headers=_auth(root_token)).json()
+    assert not any(c["session_id"] == sid for c in pending)
+
+
+def test_resolving_skips_candidate_when_llm_detects_duplicate_of_accepted_faq():
+    """Ver caso real: la misma información ("¿Ofrecen la carrera de
+    Sistemas?") ya aceptada antes, propuesta de nuevo con otra redacción --
+    no debe crear un segundo candidato pendiente."""
+    root_token = _login_as(role="root")
+    general_token = _login_as(role="general")
+    sid = "faq-duplicate-of-accepted"
+    history_service.append_turn(sid, "pregunta de prueba", "respuesta")
+    with (
+        patch("app.rag.llm.classify_department", return_value=None),
+        patch("app.services.chat_service.retrieve_context", return_value=([], 0.0)),
+    ):
+        client.post("/api/escalate", json={"session_id": sid, "name": "Est", "email": "e@test.com"})
+    client.post(
+        f"/api/admin/sessions/{sid}/reply",
+        json={"message": "Aquí está la respuesta"},
+        headers=_auth(general_token),
+    )
+
+    with (
+        patch("app.rag.llm.generate_faq_candidate", return_value=_FAKE_SUGGESTION),
+        patch(
+            "app.api.routes._find_similar_accepted_faqs",
+            return_value=["Pregunta: ¿Ofrecen la carrera de Sistemas? Respuesta: No contamos con..."],
+        ),
+        patch("app.rag.llm.is_duplicate_faq", return_value=True) as mock_is_duplicate,
+    ):
+        client.post(f"/api/admin/sessions/{sid}/resolve", headers=_auth(general_token))
+
+    mock_is_duplicate.assert_called_once()
     pending = client.get("/api/root/faq-candidates?status=pending", headers=_auth(root_token)).json()
     assert not any(c["session_id"] == sid for c in pending)
 
@@ -197,3 +243,50 @@ def test_accept_already_decided_candidate_is_rejected_with_409():
 
     res = client.post(f"/api/root/faq-candidates/{candidate['id']}/accept", headers=_auth(root_token))
     assert res.status_code == 409
+
+
+# --- llm.is_duplicate_faq (unidad, Groq simulado) ------------------------
+
+
+@patch("app.rag.llm.get_client")
+def test_is_duplicate_faq_returns_true_when_llm_says_so(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning('{"is_duplicate": true}')
+
+    result = llm.is_duplicate_faq(
+        "¿La facultad ofrece la carrera de Ingeniería en Sistemas?",
+        "No, ofrece Ingeniería en TIC.",
+        ["Pregunta: ¿Ofrecen la carrera de Sistemas? Respuesta: No contamos con..."],
+    )
+
+    assert result is True
+
+
+@patch("app.rag.llm.get_client")
+def test_is_duplicate_faq_returns_false_when_llm_says_so(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning('{"is_duplicate": false}')
+
+    result = llm.is_duplicate_faq(
+        "¿Cuál es el horario de la biblioteca?",
+        "La biblioteca abre de 7am a 9pm.",
+        ["Pregunta: ¿Ofrecen la carrera de Sistemas? Respuesta: No contamos con..."],
+    )
+
+    assert result is False
+
+
+@patch("app.rag.llm.get_client")
+def test_is_duplicate_faq_handles_malformed_response(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning("esto no es json")
+
+    assert llm.is_duplicate_faq("pregunta", "respuesta", ["algo existente"]) is False
+
+
+@patch("app.rag.llm.get_client")
+def test_is_duplicate_faq_handles_client_exception(mock_get_client):
+    mock_get_client.side_effect = RuntimeError("groq caído")
+
+    assert llm.is_duplicate_faq("pregunta", "respuesta", ["algo existente"]) is False
+
+
+def test_is_duplicate_faq_returns_false_without_similar_existing():
+    assert llm.is_duplicate_faq("pregunta", "respuesta", []) is False
