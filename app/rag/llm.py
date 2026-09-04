@@ -7,6 +7,7 @@ from typing import Generator, List, Optional, Tuple
 from groq import Groq
 
 from app.config import settings
+from app.rag.retriever import RetrievedChunk
 from app.services import admin_service
 
 logger = logging.getLogger(__name__)
@@ -195,6 +196,59 @@ def classify_department(
     except Exception:
         logger.exception("Fallo clasificando la dependencia para un escalamiento")
         return None
+
+
+def suggest_clarifying_questions(question: str, candidates: List[RetrievedChunk]) -> List[str]:
+    """Cuando el chatbot no encontró información suficiente para una
+    pregunta, revisa fragmentos con relación débil/parcial (por debajo de
+    SIMILARITY_THRESHOLD, ver retriever.retrieve_below_threshold) y le pide
+    al LLM que proponga hasta 3 preguntas breves y bien formuladas --
+    basadas ÚNICAMENTE en esos fragmentos-- que el estudiante podría haber
+    querido hacer en realidad (por ejemplo, si escribió "ing tic" en vez de
+    "¿tienen ingeniería en TIC?"). El LLM también actúa como filtro de
+    relevancia final: si ninguno de los fragmentos parece realmente
+    relacionado con el mensaje, debe devolver una lista vacía en vez de
+    forzar sugerencias sin sentido.
+
+    Nunca lanza: ante cualquier fallo de Groq o una respuesta no parseable
+    devuelve lista vacía -- best-effort, nunca debe bloquear ni degradar el
+    flujo normal de "no encontré información"."""
+    if not candidates:
+        return []
+
+    fragments_text = "\n".join(f'- [{c.document}]: "{c.text[:300]}"' for c in candidates)
+    prompt = (
+        "Un estudiante escribió un mensaje muy breve o ambiguo y el chatbot no encontró "
+        "información suficiente para responderlo con certeza. A continuación hay fragmentos de "
+        "documentos con relación débil o parcial con ese mensaje.\n\n"
+        f"MENSAJE DEL ESTUDIANTE: {question}\n\n"
+        f"FRAGMENTOS CON POSIBLE RELACIÓN:\n{fragments_text}\n\n"
+        "Si alguno de estos fragmentos parece realmente relacionado con lo que el estudiante "
+        "quiso preguntar, propone hasta 3 preguntas breves, naturales y bien formuladas en "
+        "español que el estudiante podría haber querido hacer, cada una respondible únicamente "
+        "con el contenido de esos fragmentos. Si ninguno parece relacionado, devuelve una lista "
+        "vacía -- no inventes preguntas sin relación real con los fragmentos.\n\n"
+        'Responde ÚNICAMENTE con JSON: {"suggestions": ["...", "...", "..."]} (0 a 3 elementos).'
+    )
+
+    try:
+        client = get_client()
+        completion = client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_completion_tokens=300,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        suggestions = parsed.get("suggestions")
+        if isinstance(suggestions, list):
+            return [s.strip() for s in suggestions if isinstance(s, str) and s.strip()][:3]
+        return []
+    except Exception:
+        logger.exception("Fallo generando preguntas sugeridas de aclaración")
+        return []
 
 
 def generate_faq_candidate(question: str, advisor_answers: List[str]) -> Optional[dict]:

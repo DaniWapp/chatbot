@@ -306,6 +306,36 @@ body {
   background: var(--accent-soft);
 }
 
+.suggestions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 320px;
+}
+
+.suggestions-label {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.suggestion-button {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent-dark);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.suggestion-button:hover {
+  background: var(--accent-soft);
+}
+
 .escalate-form {
   display: flex;
   flex-direction: column;

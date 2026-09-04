@@ -14,7 +14,7 @@ from typing import Generator, List, Tuple
 from app.config import settings
 from app.models.schemas import ChatMetrics, ChatResponse, SourceCitation
 from app.rag import llm
-from app.rag.retriever import RetrievedChunk, build_context, retrieve
+from app.rag.retriever import RetrievedChunk, build_context, retrieve, retrieve_below_threshold
 from app.services import history as history_service
 from app.services import ws_manager
 
@@ -77,6 +77,19 @@ def retrieve_context(question: str) -> Tuple[List[RetrievedChunk], float]:
     return chunks, retrieval_ms
 
 
+def _suggest_clarifications(question: str) -> List[str]:
+    """Cuando ya se determinó que no hay información suficiente, revisa si
+    hay fragmentos con relación débil (por debajo de SIMILARITY_THRESHOLD)
+    para pedirle al LLM hasta 3 preguntas alternativas mejor formuladas.
+    Ver llm.suggest_clarifying_questions -- best-effort, nunca lanza."""
+    weak_candidates = [
+        c for c in retrieve_below_threshold(question) if c.similarity >= settings.SUGGESTION_MIN_SIMILARITY
+    ][:3]
+    if not weak_candidates:
+        return []
+    return llm.suggest_clarifying_questions(question, weak_candidates)
+
+
 def answer_question(session_id: str, question: str) -> ChatResponse:
     """Flujo completo sin streaming (usado por evaluación/tests y como fallback)."""
     if history_service.needs_human(session_id):
@@ -104,11 +117,13 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
     hide_sources = is_no_info or _looks_too_short_for_citation(question)
+    suggestions = _suggest_clarifications(question) if is_no_info else []
 
     return ChatResponse(
         answer=answer_text,
         sources=[] if hide_sources else _dedup_sources(chunks),
         has_sufficient_info=not is_no_info,
+        suggestions=suggestions,
         metrics=ChatMetrics(
             retrieval_ms=round(retrieval_ms, 2),
             generation_ms=round(generation_ms, 2),
@@ -149,8 +164,12 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
 
     _save_and_broadcast_turn(session_id, question, full_answer)
 
+    is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
+    suggestions = _suggest_clarifications(question) if is_no_info else []
+
     yield {
         "type": "done",
+        "suggestions": suggestions,
         "metrics": {
             "retrieval_ms": round(retrieval_ms, 2),
             "generation_ms": round(generation_ms, 2),

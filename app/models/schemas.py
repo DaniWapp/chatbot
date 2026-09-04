@@ -33,6 +33,7 @@ class ChatResponse(BaseModel):
     answer: str
     sources: List[SourceCitation] = []
     has_sufficient_info: bool
+    suggestions: List[str] = []
     metrics: ChatMetrics
     escalated: bool = False
 

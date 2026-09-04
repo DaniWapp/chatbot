@@ -31,6 +31,11 @@ class Settings:
     CHUNK_SIZE: int = _get_int("CHUNK_SIZE", 1000)
     CHUNK_OVERLAP: int = _get_int("CHUNK_OVERLAP", 150)
     SIMILARITY_THRESHOLD: float = _get_float("SIMILARITY_THRESHOLD", 0.35)
+    # Umbral más bajo, solo para decidir si vale la pena pedirle al LLM
+    # sugerencias de reformulación cuando no hay información suficiente (ver
+    # chat_service.py) -- evita llamar al LLM cuando ni siquiera hay una
+    # señal débil de relación con la pregunta.
+    SUGGESTION_MIN_SIMILARITY: float = _get_float("SUGGESTION_MIN_SIMILARITY", 0.25)
 
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)

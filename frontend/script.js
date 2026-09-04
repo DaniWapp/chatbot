@@ -346,6 +346,28 @@ function showEscalationForm(container) {
   });
 }
 
+function addSuggestionOptions(block, suggestions) {
+  if (!suggestions || !suggestions.length) return;
+  const container = document.createElement("div");
+  container.className = "suggestions-container";
+  const label = document.createElement("p");
+  label.className = "suggestions-label";
+  label.textContent = "¿Quisiste decir alguna de estas preguntas?";
+  container.appendChild(label);
+  suggestions.forEach((text) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "suggestion-button";
+    button.textContent = text;
+    button.addEventListener("click", () => {
+      container.remove();
+      sendMessage(text);
+    });
+    container.appendChild(button);
+  });
+  block.appendChild(container);
+}
+
 function addEscalationOption(block) {
   if (isEscalated) return;
   const container = document.createElement("div");
@@ -529,6 +551,7 @@ async function sendMessage(text) {
     let answerText = "";
     let firstDelta = true;
     let sources = [];
+    let suggestions = [];
     let wasEscalated = false;
 
     while (true) {
@@ -564,6 +587,8 @@ async function sendMessage(text) {
           scrollToBottom();
         } else if (event.type === "escalated") {
           wasEscalated = true;
+        } else if (event.type === "done") {
+          suggestions = event.suggestions || [];
         } else if (event.type === "error") {
           bubble.textContent = "Error: " + event.message;
         }
@@ -584,6 +609,7 @@ async function sendMessage(text) {
       block.remove();
     } else if (answerText.trim() === NO_INFO_TEXT) {
       bubble.classList.add("no-info");
+      addSuggestionOptions(block, suggestions);
       addEscalationOption(block);
     } else {
       renderSources(block, sources);
