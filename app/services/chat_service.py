@@ -77,7 +77,7 @@ def retrieve_context(question: str) -> Tuple[List[RetrievedChunk], float]:
     return chunks, retrieval_ms
 
 
-_SUGGESTION_CANDIDATE_POOL = 10
+_SUGGESTION_CANDIDATE_POOL = 20
 
 
 def _suggest_clarifications(question: str) -> List[str]:
