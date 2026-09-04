@@ -505,3 +505,89 @@ def test_upload_txt_is_unaffected_by_conversion(tmp_path, monkeypatch):
 
     assert res.status_code == 200
     assert (tmp_path / "normal.txt").exists()
+
+
+def test_upload_returns_final_filename_in_response(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("simple.txt", b"contenido de prueba suficientemente largo.", "text/plain")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert res.json()["final_filename"] == "simple.txt"
+
+
+def test_colliding_pdf_and_docx_get_consecutive_names_instead_of_overwriting(tmp_path, monkeypatch):
+    """Reporte.pdf y Reporte.docx, subidos por separado, convergerían al
+    mismo "Reporte.txt" -- el segundo no debe pisar al primero."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    from app.rag.document_loader import LoadedDocument, PageText
+
+    with patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts), patch(
+        "app.services.ingest_service.vector_store.add_chunks"
+    ), patch("app.services.ingest_service.vector_store.reset_collection"):
+        with patch(
+            "app.api.routes.load_document",
+            return_value=LoadedDocument(filename="Reporte.pdf", pages=[PageText(page_number=1, text="Contenido del PDF.")]),
+        ):
+            res1 = client.post(
+                "/api/root/documents",
+                files={"file": ("Reporte.pdf", b"contenido falso, extraccion mockeada", "application/pdf")},
+                headers=_auth(token),
+            )
+        assert res1.status_code == 200
+        assert res1.json()["final_filename"] == "Reporte.txt"
+
+        with patch(
+            "app.api.routes.load_document",
+            return_value=LoadedDocument(filename="Reporte.docx", pages=[PageText(page_number=1, text="Contenido del DOCX.")]),
+        ):
+            res2 = client.post(
+                "/api/root/documents",
+                files={
+                    "file": (
+                        "Reporte.docx",
+                        b"contenido falso, extraccion mockeada",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )
+                },
+                headers=_auth(token),
+            )
+        assert res2.status_code == 200
+        assert res2.json()["final_filename"] == "Reporte (2).txt"
+
+    # Ambos archivos siguen existiendo, con su contenido propio -- ninguno se perdió.
+    assert (tmp_path / "Reporte.txt").read_text(encoding="utf-8") == "Contenido del PDF."
+    assert (tmp_path / "Reporte (2).txt").read_text(encoding="utf-8") == "Contenido del DOCX."
+
+
+def test_documents_list_is_sorted_newest_first(tmp_path, monkeypatch):
+    import time
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    (tmp_path / "primero.txt").write_text("contenido", encoding="utf-8")
+    time.sleep(0.05)
+    (tmp_path / "segundo.txt").write_text("contenido", encoding="utf-8")
+
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    filenames = [d["filename"] for d in docs]
+
+    assert filenames.index("segundo.txt") < filenames.index("primero.txt")

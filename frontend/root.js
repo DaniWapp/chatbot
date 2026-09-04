@@ -711,8 +711,12 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     try {
       const res = await rootFetch("/api/root/documents", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await errorDetail(res));
+      const data = await res.json();
       closeModal();
       await loadDocuments();
+      if (data.final_filename && data.final_filename !== file.name) {
+        alert(`El documento se guardó como "${data.final_filename}".`);
+      }
     } catch (err) {
       errorEl.textContent = err.message || "No se pudo subir el documento.";
       errorEl.hidden = false;

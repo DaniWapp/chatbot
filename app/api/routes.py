@@ -726,23 +726,29 @@ async def update_institution_route(
 # --- Documentos: lógica compartida entre root y el panel (general/dependencia) ---
 
 
-def _ingest_result_to_response(result) -> IngestResponse:
+def _ingest_result_to_response(result, final_filename: Optional[str] = None) -> IngestResponse:
     return IngestResponse(
         status="ok" if result.documents_processed > 0 else "sin_documentos",
         documents_processed=result.documents_processed,
         chunks_created=result.chunks_created,
         errors=result.errors,
+        final_filename=final_filename,
     )
 
 
 def _list_documents() -> List[DocumentInfo]:
+    # Más reciente primero (por fecha de modificación del archivo en disco):
+    # así un documento recién subido -- incluido uno renombrado con
+    # consecutivo por una colisión de nombre, ver _next_available_txt_name --
+    # aparece de inmediato arriba de la lista, sin tener que buscarlo.
+    paths = sorted(ingest_service.discover_documents(), key=lambda p: p.stat().st_mtime, reverse=True)
     return [
         DocumentInfo(
             filename=path.name,
             size_bytes=path.stat().st_size,
             dependencia_id=ingest_service.get_document_dependencia(path.name),
         )
-        for path in ingest_service.discover_documents()
+        for path in paths
     ]
 
 
@@ -755,6 +761,21 @@ def _list_documents() -> List[DocumentInfo]:
 # fragmento (ver chunker.py::_pack_rows), algo atado a la extensión .xlsx
 # que se perdería si se convirtiera a .txt.
 _CONVERT_TO_TXT_EXTENSIONS = {".pdf", ".docx"}
+
+
+def _next_available_txt_name(stem: str) -> str:
+    """Si "<stem>.txt" ya existe, agrega un consecutivo -- "<stem> (2).txt",
+    "<stem> (3).txt", etc. -- hasta encontrar un nombre libre. Evita que dos
+    archivos de origen distintos que comparten nombre sin la extensión (ej.
+    "Reporte.pdf" y "Reporte.docx" subidos por separado) terminen
+    pisándose el uno al otro al convertirse ambos a .txt."""
+    candidate = f"{stem}.txt"
+    if not (settings.DOCUMENTS_DIR / candidate).exists():
+        return candidate
+    counter = 2
+    while (settings.DOCUMENTS_DIR / f"{stem} ({counter}).txt").exists():
+        counter += 1
+    return f"{stem} ({counter}).txt"
 
 
 def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional[int]) -> IngestResponse:
@@ -790,7 +811,10 @@ def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional
             raise HTTPException(status_code=400, detail=f"No se pudo procesar el documento: {exc}") from exc
 
         extracted_text = "\n\n".join(page.text for page in document.pages).strip()
-        final_filename = original_path.stem + ".txt"
+        # No sobreescribir un documento ya existente con ese nombre derivado
+        # (ej. Reporte.pdf y Reporte.docx subidos por separado convergerían
+        # ambos a "Reporte.txt") -- se le agrega un consecutivo si hace falta.
+        final_filename = _next_available_txt_name(original_path.stem)
         (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
         original_path.unlink()  # solo se conserva el .txt
 
@@ -798,7 +822,7 @@ def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional
     ingest_service.set_document_dependencia(final_filename, dependencia_id)
 
     result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
-    return _ingest_result_to_response(result)
+    return _ingest_result_to_response(result, final_filename=final_filename)
 
 
 def _recategorize_document(filename: str, dependencia_id: Optional[int]) -> IngestResponse:

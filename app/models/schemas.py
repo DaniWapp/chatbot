@@ -49,6 +49,10 @@ class IngestResponse(BaseModel):
     documents_processed: int
     chunks_created: int
     errors: List[str] = []
+    # Nombre real con el que quedó guardado el archivo -- puede diferir del
+    # que subió el usuario (conversión a .txt, o un consecutivo agregado
+    # por una colisión de nombre, ver _next_available_txt_name).
+    final_filename: Optional[str] = None
 
 
 class SessionSummary(BaseModel):
