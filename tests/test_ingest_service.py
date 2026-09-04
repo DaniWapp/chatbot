@@ -28,7 +28,7 @@ def test_ingestion_processes_valid_documents_and_skips_invalid(tmp_path, monkeyp
 
     added_chunks = []
 
-    def fake_add_chunks(chunks, embeddings):
+    def fake_add_chunks(chunks, embeddings, dependencia_id=None):
         added_chunks.extend(chunks)
 
     with patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts), patch(

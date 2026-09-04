@@ -8,6 +8,14 @@ __pycache__/
 vector_db/
 vector_db_test/
 
+# Historial de conversaciones (datos de usuarios, no versionar)
+history.db
+history_test.db
+backups/
+
+# Logs del servidor
+*.log
+
 # Modelos descargados en caché (Sentence Transformers)
 .cache/
 

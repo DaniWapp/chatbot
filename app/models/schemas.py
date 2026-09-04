@@ -1,7 +1,13 @@
 """Esquemas Pydantic: contratos de entrada/salida de la API."""
-from typing import List, Optional
+import re
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Validación simple de formato (no exhaustiva RFC 5322): suficiente para
+# rechazar entradas obviamente inválidas sin agregar una dependencia nueva
+# como email-validator.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class ChatRequest(BaseModel):
@@ -28,6 +34,7 @@ class ChatResponse(BaseModel):
     sources: List[SourceCitation] = []
     has_sufficient_info: bool
     metrics: ChatMetrics
+    escalated: bool = False
 
 
 class HealthResponse(BaseModel):
@@ -41,3 +48,178 @@ class IngestResponse(BaseModel):
     documents_processed: int
     chunks_created: int
     errors: List[str] = []
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    last_active: str
+    turn_count: int
+    last_message: str
+    needs_human: bool
+    student_name: Optional[str] = None
+    student_email: Optional[str] = None
+    escalated_at: Optional[str] = None
+    dependencia_id: Optional[int] = None
+    dependencia_assigned_at: Optional[str] = None
+    first_response_at: Optional[str] = None
+
+
+class SessionListResponse(BaseModel):
+    sessions: List[SessionSummary]
+    total: int
+    has_more: bool
+    pending_count: int
+
+
+class SessionMessage(BaseModel):
+    sender: str  # "student" | "assistant" | "advisor"
+    message: str
+    created_at: str
+    message_type: str = "text"  # "text" | "checkin" | "checkin_response"
+
+
+class SessionHistoryPage(BaseModel):
+    messages: List[SessionMessage]
+    has_more: bool
+    next_cursor: Optional[str] = None
+
+
+class EscalateRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=200)
+    email: str = Field(..., min_length=3, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, value: str) -> str:
+        if not _EMAIL_RE.match(value.strip()):
+            raise ValueError("Correo electrónico con formato inválido.")
+        return value.strip()
+
+
+class AdminReplyRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class CheckinResponseRequest(BaseModel):
+    wants_more_help: bool
+
+
+class SessionStatus(BaseModel):
+    needs_human: bool
+    student_name: Optional[str] = None
+    student_email: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class LoginResponse(BaseModel):
+    token: str
+    role: str
+    display_name: str
+    dependencia_id: Optional[int] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+
+class DependenciaCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(..., min_length=1, max_length=2000)
+
+
+class DependenciaUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, min_length=1, max_length=2000)
+
+
+class DependenciaResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    created_at: str
+
+
+AdminRole = Literal["root", "general", "dependencia"]
+
+
+class AdminCreateRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=8, max_length=200)
+    display_name: str = Field(..., min_length=1, max_length=200)
+    role: AdminRole
+    dependencia_id: Optional[int] = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username_is_email(cls, value: str) -> str:
+        if not _EMAIL_RE.match(value.strip()):
+            raise ValueError("El usuario debe ser un correo electrónico válido.")
+        return value.strip()
+
+
+class AdminUpdateRequest(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    role: Optional[AdminRole] = None
+    dependencia_id: Optional[int] = None
+
+
+class AdminSetPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=8, max_length=200)
+
+
+class AdminSetActiveRequest(BaseModel):
+    active: bool
+
+
+class AdminResponse(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
+    dependencia_id: Optional[int] = None
+    active: bool
+    created_at: str
+
+
+class InstitutionResponse(BaseModel):
+    name: str
+    extra_info: Optional[str] = None
+    logo_url: Optional[str] = None
+
+
+class DocumentInfo(BaseModel):
+    filename: str
+    size_bytes: int
+    dependencia_id: Optional[int] = None
+
+
+class DocumentRecategorizeRequest(BaseModel):
+    dependencia_id: Optional[int] = None
+
+
+class ReassignSessionRequest(BaseModel):
+    dependencia_id: Optional[int] = None
+
+
+class FaqCandidateResponse(BaseModel):
+    id: int
+    session_id: str
+    dependencia_id: Optional[int] = None
+    original_question: str
+    original_answer: str
+    suggested_question: str
+    suggested_answer: str
+    status: str
+    created_at: str
+    decided_at: Optional[str] = None
+
+
+class FaqCandidateUpdateRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    answer: str = Field(..., min_length=1, max_length=5000)

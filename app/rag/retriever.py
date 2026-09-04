@@ -1,7 +1,7 @@
 """Recuperación semántica: embebe la pregunta, busca en el vector store y
 filtra por umbral de similitud para evitar enviar contexto irrelevante al LLM."""
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from app.config import settings
 from app.rag import vector_store
@@ -15,6 +15,7 @@ class RetrievedChunk:
     document: str
     page: int
     similarity: float
+    dependencia_id: Optional[int] = None
 
 
 def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
@@ -35,6 +36,7 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
             document=h["document"],
             page=h["page"],
             similarity=h["similarity"],
+            dependencia_id=h.get("dependencia_id"),
         )
         for h in hits
         if h["similarity"] >= settings.SIMILARITY_THRESHOLD

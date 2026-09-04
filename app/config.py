@@ -34,10 +34,38 @@ class Settings:
 
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)
+    HISTORY_DB_PATH: Path = BASE_DIR / os.getenv("HISTORY_DB_PATH", "history.db")
+    # Respaldo periódico de history.db (todas las conversaciones): un solo
+    # archivo SQLite sin respaldo se pierde entero si se corrompe o se borra
+    # por error.
+    HISTORY_BACKUP_DIR: Path = BASE_DIR / os.getenv("HISTORY_BACKUP_DIR", "backups")
+    HISTORY_BACKUP_INTERVAL_SECONDS: int = _get_int("HISTORY_BACKUP_INTERVAL_SECONDS", 6 * 60 * 60)
+    HISTORY_BACKUP_RETENTION: int = _get_int("HISTORY_BACKUP_RETENTION", 14)
+
+    # Si una dependencia no responde (ni un solo mensaje de asesor) en este
+    # tiempo desde que se le asignó una conversación, se redirige
+    # automáticamente al administrador general.
+    AUTO_ESCALATION_TIMEOUT_SECONDS: int = _get_int("AUTO_ESCALATION_TIMEOUT_SECONDS", 5 * 60)
+    AUTO_ESCALATION_CHECK_INTERVAL_SECONDS: int = _get_int("AUTO_ESCALATION_CHECK_INTERVAL_SECONDS", 60)
 
     # --- Backend ---
     BACKEND_HOST: str = os.getenv("BACKEND_HOST", "0.0.0.0")
     BACKEND_PORT: int = _get_int("BACKEND_PORT", 8000)
+
+    # --- Seguridad ---
+    # Orígenes permitidos por CORS, separados por coma. Por defecto solo el
+    # propio backend (localhost) y la IP de red local típica de este proyecto.
+    ALLOWED_ORIGINS: list = [
+        o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",") if o.strip()
+    ]
+    # Límite de peticiones a /api/chat y /api/chat/stream por IP, para evitar
+    # que alguien agote la cuota de Groq con peticiones repetidas.
+    CHAT_RATE_LIMIT_MAX: int = _get_int("CHAT_RATE_LIMIT_MAX", 15)
+    CHAT_RATE_LIMIT_WINDOW_SECONDS: int = _get_int("CHAT_RATE_LIMIT_WINDOW_SECONDS", 60)
+    # Límite de intentos de /api/auth/login por IP (fuerza bruta), ahora que
+    # las cuentas de administrador tienen contraseñas reales.
+    LOGIN_RATE_LIMIT_MAX: int = _get_int("LOGIN_RATE_LIMIT_MAX", 10)
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = _get_int("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300)
 
     # --- Documentos ---
     DOCUMENTS_DIR: Path = BASE_DIR / os.getenv("DOCUMENTS_DIR", "documents")
@@ -46,6 +74,11 @@ class Settings:
 
     ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".xlsx"}
     COLLECTION_NAME = "facultad_ingenieria"
+
+    # --- Institución (logo) ---
+    LOGO_DIR: Path = BASE_DIR / "frontend" / "branding"
+    ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".webp"}
+    MAX_LOGO_SIZE_MB: int = _get_int("MAX_LOGO_SIZE_MB", 5)
 
     NO_INFO_MESSAGE = (
         "No encontré información suficiente en la documentación disponible "

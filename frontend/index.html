@@ -4,24 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Asistente Virtual - Facultad de Ingeniería</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=21" />
 </head>
 <body>
   <div class="app">
     <header class="app-header">
       <div class="header-title">
-        <span class="header-icon">🎓</span>
+        <img id="institution-logo" class="institution-logo" src="" alt="" hidden />
         <div>
           <h1>Asistente Virtual</h1>
-          <p>Facultad de Ingeniería</p>
+          <p id="institution-subtitle">Facultad de Ingeniería</p>
         </div>
       </div>
-      <span id="status-badge" class="status-badge" title="Estado del servidor">●</span>
+      <div class="header-actions">
+        <button id="mark-solved-button" class="mark-solved-button" type="button">Marcar como solucionado</button>
+        <span id="status-badge" class="status-badge offline" title="Estado del servidor">Conectando</span>
+      </div>
     </header>
 
     <main id="chat-window" class="chat-window">
       <div id="empty-state" class="empty-state">
-        <p class="empty-icon">💬</p>
         <p>Pregúntame sobre reglamentos, matrículas, calendario académico, requisitos de grado y más.</p>
         <div class="suggestions">
           <button class="suggestion-chip" type="button">¿Cuáles son los requisitos para graduarme?</button>
@@ -31,6 +33,13 @@
         </div>
       </div>
     </main>
+
+    <div id="escalation-banner" class="escalation-banner" hidden>
+      <span class="escalation-banner-text">
+        Estás en <strong>modo humano</strong>: un asesor te está atendiendo.
+      </span>
+      <button id="banner-mark-solved-button" class="banner-mark-solved-button" type="button">Marcar como solucionado - Volver a modo bot</button>
+    </div>
 
     <form id="chat-form" class="chat-input-bar">
       <input
@@ -44,6 +53,6 @@
     </form>
   </div>
 
-  <script src="/static/script.js"></script>
+  <script src="/static/script.js?v=24"></script>
 </body>
 </html>

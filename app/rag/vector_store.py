@@ -68,7 +68,11 @@ def reset_collection() -> None:
             _metadata_path().unlink()
 
 
-def add_chunks(chunks: List[Chunk], embeddings: List[List[float]]) -> None:
+def add_chunks(chunks: List[Chunk], embeddings: List[List[float]], dependencia_id: Optional[int] = None) -> None:
+    """dependencia_id se guarda igual para todos los chunks de esta llamada
+    (es un atributo del documento de origen, no del fragmento individual) --
+    se usa como señal para que el LLM decida a qué dependencia redirigir una
+    pregunta escalada."""
     global _index
     if not chunks:
         return
@@ -82,8 +86,54 @@ def add_chunks(chunks: List[Chunk], embeddings: List[List[float]]) -> None:
         _index.add(vectors)
         for c in chunks:
             _metadata.append(
-                {"chunk_id": c.chunk_id, "document": c.document, "page": c.page, "text": c.text}
+                {
+                    "chunk_id": c.chunk_id,
+                    "document": c.document,
+                    "page": c.page,
+                    "text": c.text,
+                    "dependencia_id": dependencia_id,
+                }
             )
+        _persist()
+
+
+def remove_document(filename: str) -> None:
+    """Quita del índice todos los chunks de un documento específico, sin
+    tocar los demás -- para reingestar un solo archivo (subida,
+    recategorización, o una FAQ aceptada) sin reconstruir todo el índice
+    desde cero. Se llama siempre antes de volver a agregar ese mismo
+    archivo, por si ya tenía chunks de una versión anterior de su
+    contenido (evita duplicarlos).
+
+    FAISS no borra filas de un IndexFlatIP directamente, así que se
+    reconstruyen (index.reconstruct: álgebra sobre vectores ya calculados,
+    NO vuelve a llamar al modelo de embeddings) los vectores que sí se
+    conservan, y se arma un índice nuevo solo con esos -- barato comparado
+    con rehacer los embeddings de todo el corpus."""
+    global _index, _metadata
+    with _lock:
+        _ensure_loaded()
+        if _index is None or not _metadata:
+            return
+        keep_indices = [i for i, m in enumerate(_metadata) if m["document"] != filename]
+        if len(keep_indices) == len(_metadata):
+            return  # ese documento no tenía chunks indexados
+
+        if not keep_indices:
+            _index = None
+            _metadata = []
+            if _index_path().exists():
+                _index_path().unlink()
+            if _metadata_path().exists():
+                _metadata_path().unlink()
+            return
+
+        dim = _index.d
+        kept_vectors = np.array([_index.reconstruct(i) for i in keep_indices], dtype="float32")
+        new_index = faiss.IndexFlatIP(dim)
+        new_index.add(kept_vectors)
+        _index = new_index
+        _metadata = [_metadata[i] for i in keep_indices]
         _persist()
 
 
@@ -114,6 +164,8 @@ def query(embedding: List[float], top_k: int) -> List[Dict]:
                     "document": meta["document"],
                     "page": meta["page"],
                     "similarity": float(sim),
+                    # .get(): los índices creados antes de esta función no tienen esta clave.
+                    "dependencia_id": meta.get("dependencia_id"),
                 }
             )
         return hits

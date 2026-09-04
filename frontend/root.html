@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administración - Facultad de Ingeniería</title>
+  <link rel="stylesheet" href="/static/root.css?v=4" />
+</head>
+<body>
+  <div id="auth-gate" class="auth-gate">
+    <form id="auth-form" class="auth-form">
+      <h2>Administración</h2>
+      <p>Acceso exclusivo para la cuenta root.</p>
+      <input id="admin-username-input" type="text" placeholder="Usuario" autocomplete="username" />
+      <input id="admin-password-input" type="password" placeholder="Contraseña" autocomplete="current-password" />
+      <button type="submit">Entrar</button>
+      <p id="auth-error" class="auth-error" hidden>Usuario o contraseña incorrectos.</p>
+    </form>
+  </div>
+
+  <div id="root-app" class="root-app" hidden>
+    <header class="root-header">
+      <div class="header-title">
+        <h1>Administración</h1>
+        <p id="admin-display-name">Facultad de Ingeniería</p>
+      </div>
+      <div class="header-actions">
+        <button id="change-password-button" class="secondary-button" type="button">Cambiar mi contraseña</button>
+        <button id="logout-button" class="logout-button" type="button">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <nav class="root-tabs">
+      <button class="root-tab active" data-tab="institucion" type="button">Institución</button>
+      <button class="root-tab" data-tab="dependencias" type="button">Dependencias</button>
+      <button class="root-tab" data-tab="administradores" type="button">Administradores</button>
+      <button class="root-tab" data-tab="documentos" type="button">Documentos</button>
+      <button class="root-tab" data-tab="faq" type="button">Preguntas frecuentes</button>
+    </nav>
+
+    <main class="root-content">
+      <section id="tab-institucion" class="root-tab-panel">
+        <div class="panel-section-header">
+          <h2>Institución</h2>
+        </div>
+        <form id="institution-form" class="modal-form institution-form">
+          <div class="institution-logo-row">
+            <img id="institution-logo-preview" class="institution-logo-preview" src="" alt="" hidden />
+            <label class="file-input-label">
+              Cambiar logo
+              <input id="institution-logo-input" type="file" accept=".png,.jpg,.jpeg,.svg,.webp" hidden />
+            </label>
+          </div>
+          <label>Nombre de la institución
+            <input id="institution-name-input" type="text" maxlength="200" required />
+          </label>
+          <label>Información adicional (opcional)
+            <textarea id="institution-extra-input" maxlength="2000"></textarea>
+          </label>
+          <p id="institution-form-error" class="modal-error" hidden></p>
+          <p id="institution-form-success" class="form-success" hidden>Guardado.</p>
+          <div>
+            <button type="submit" class="primary-button">Guardar cambios</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="tab-dependencias" class="root-tab-panel" hidden>
+        <div class="panel-section-header">
+          <h2>Dependencias</h2>
+          <button id="new-dependencia-button" class="primary-button" type="button">+ Nueva dependencia</button>
+        </div>
+        <p class="panel-section-hint">
+          El nombre y la descripción se usan para que el chatbot decida a cuál dependencia redirigir
+          cada pregunta escalada -- entre más clara la descripción, mejor el enrutamiento.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Descripción</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dependencias-table-body"></tbody>
+        </table>
+        <p id="dependencias-empty" class="empty-hint" hidden>Todavía no hay dependencias creadas.</p>
+      </section>
+
+      <section id="tab-administradores" class="root-tab-panel" hidden>
+        <div class="panel-section-header">
+          <h2>Administradores</h2>
+          <button id="new-admin-button" class="primary-button" type="button">+ Nuevo administrador</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Nombre</th>
+              <th>Rol</th>
+              <th>Dependencia</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="admins-table-body"></tbody>
+        </table>
+        <p id="admins-empty" class="empty-hint" hidden>Todavía no hay administradores creados.</p>
+      </section>
+
+      <section id="tab-documentos" class="root-tab-panel" hidden>
+        <div class="panel-section-header">
+          <h2>Documentos</h2>
+          <button id="new-document-button" class="primary-button" type="button">+ Subir documento</button>
+        </div>
+        <p class="panel-section-hint">
+          Formatos permitidos: PDF, TXT, DOCX, XLSX. Etiquetar un documento con una dependencia ayuda
+          al chatbot a decidir a quién redirigir las preguntas relacionadas con su contenido. Cada
+          cambio reconstruye el índice automáticamente.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Archivo</th>
+              <th>Tamaño</th>
+              <th>Dependencia</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="documents-table-body"></tbody>
+        </table>
+        <p id="documents-empty" class="empty-hint" hidden>Todavía no hay documentos indexados.</p>
+      </section>
+
+      <section id="tab-faq" class="root-tab-panel" hidden>
+        <div class="panel-section-header">
+          <h2>Preguntas frecuentes sugeridas</h2>
+        </div>
+        <p class="panel-section-hint">
+          Cuando un asesor resuelve una conversación escalada, el sistema propone aquí una pregunta y
+          respuesta reescritas en formato de FAQ. Puedes editarlas antes de aceptarlas -- al aceptar,
+          se agregan al documento de preguntas frecuentes de la dependencia correspondiente y se
+          reindexan automáticamente.
+        </p>
+        <div id="faq-candidates-list" class="faq-candidates-list"></div>
+        <p id="faq-candidates-empty" class="empty-hint" hidden>No hay propuestas pendientes por ahora.</p>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div id="modal-content" class="modal-content"></div>
+  </div>
+
+  <script src="/static/root.js?v=4"></script>
+</body>
+</html>
