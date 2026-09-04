@@ -117,11 +117,24 @@ async function loadDependenciasForReassign() {
   }
 }
 
+function formatAdminIdentityLabel() {
+  const displayName = localStorage.getItem("admin_display_name") || "";
+  const role = getAdminRole();
+  let roleLabel = "";
+  if (role === "general") {
+    roleLabel = "Administrador general";
+  } else if (role === "dependencia") {
+    const dep = dependenciasForReassign.find((d) => d.id === getAdminDependenciaId());
+    roleLabel = dep ? dep.name : "Administrador de dependencia";
+  }
+  return roleLabel ? `${displayName} · ${roleLabel}` : displayName;
+}
+
 async function tryEnterPanel() {
   try {
     await loadSessions();
     await loadDependenciasForReassign();
-    adminDisplayNameEl.textContent = localStorage.getItem("admin_display_name") || "";
+    adminDisplayNameEl.textContent = formatAdminIdentityLabel();
     // El root no llega a /panel (require_conversation_admin lo bloquea), así
     // que este botón siempre aplica para quien sí logra entrar aquí: general
     // (paridad con root en documentos) o dependencia (solo los suyos).
