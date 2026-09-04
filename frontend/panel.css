@@ -583,6 +583,119 @@ body {
   background: var(--accent);
 }
 
+.ask-bot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 28px;
+  max-width: 720px;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--accent-soft);
+  flex-shrink: 0;
+}
+
+.ask-bot-panel[hidden] {
+  display: none;
+}
+
+.ask-bot-form {
+  display: flex;
+  gap: 10px;
+}
+
+.ask-bot-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong, #d4d4d8);
+  font-size: 13px;
+  outline: none;
+  background: var(--surface);
+}
+
+.ask-bot-form input:focus {
+  border-color: var(--accent);
+}
+
+.ask-bot-form button {
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent-dark);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ask-bot-form button:hover {
+  background: var(--accent);
+}
+
+.ask-bot-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.ask-bot-result[hidden] {
+  display: none;
+}
+
+.ask-bot-answer {
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.ask-bot-sources {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ask-bot-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ask-bot-actions .primary-button {
+  border: none;
+  background: var(--accent-dark);
+  color: white;
+  border-radius: var(--radius-md);
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ask-bot-actions .primary-button:hover {
+  background: var(--accent);
+}
+
+.ask-bot-actions .cancel-button {
+  border: 1px solid var(--border-strong, #d4d4d8);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  padding: 7px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ask-bot-actions .cancel-button:hover {
+  background: var(--surface-hover);
+}
+
 @media (max-width: 768px) {
   .panel-header {
     padding: 14px 18px;
@@ -641,5 +754,10 @@ body {
   .advisor-reply-form {
     max-width: 100%;
     padding: 12px 16px;
+  }
+
+  .ask-bot-panel {
+    max-width: 100%;
+    padding: 10px 16px;
   }
 }

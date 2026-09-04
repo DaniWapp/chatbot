@@ -20,6 +20,14 @@ const askContinueButtonEl = document.getElementById("ask-continue-button");
 const reassignSelectEl = document.getElementById("reassign-select");
 const advisorReplyFormEl = document.getElementById("advisor-reply-form");
 const advisorReplyInputEl = document.getElementById("advisor-reply-input");
+const askBotPanelEl = document.getElementById("ask-bot-panel");
+const askBotFormEl = document.getElementById("ask-bot-form");
+const askBotInputEl = document.getElementById("ask-bot-input");
+const askBotResultEl = document.getElementById("ask-bot-result");
+const askBotAnswerEl = document.getElementById("ask-bot-answer");
+const askBotSourcesEl = document.getElementById("ask-bot-sources");
+const askBotUseButtonEl = document.getElementById("ask-bot-use");
+const askBotDiscardButtonEl = document.getElementById("ask-bot-discard");
 const wsStatusEl = document.getElementById("ws-status");
 const panelBodyEl = document.querySelector(".panel-body");
 const backToListButton = document.getElementById("back-to-list");
@@ -322,6 +330,7 @@ function updateReplyUiForActiveSession() {
   resolveButtonEl.hidden = !(needsHuman && canAct);
   askContinueButtonEl.hidden = !(needsHuman && canAct);
   advisorReplyFormEl.hidden = !(needsHuman && canAct);
+  askBotPanelEl.hidden = !(needsHuman && canAct);
   reassignSelectEl.hidden = !needsHuman;
 }
 
@@ -375,6 +384,11 @@ async function selectSession(sessionId) {
   conversationHasMoreOlder = false;
   conversationNextCursor = null;
 
+  // Limpiar cualquier borrador del asistente de la conversación anterior --
+  // no debe arrastrarse de una conversación a otra.
+  askBotResultEl.hidden = true;
+  askBotInputEl.value = "";
+
   const res = await adminFetch(`/api/admin/sessions/${encodeURIComponent(sessionId)}/messages?limit=${MESSAGE_PAGE_SIZE}`);
   const data = await res.json();
   if (sessionId !== activeSessionId) return; // el usuario cambió de conversación mientras cargaba
@@ -385,6 +399,12 @@ async function selectSession(sessionId) {
   data.messages.forEach((m, index) => {
     appendMessageToView(m.sender, m.message, m.created_at, index === triggerIndex);
   });
+
+  // Prellenar la herramienta de "preguntar al asistente" con la última
+  // pregunta real del estudiante -- el asesor la edita/mejora en vez de
+  // transcribirla de cero.
+  const lastStudentMessage = [...data.messages].reverse().find((m) => m.sender === "student");
+  askBotInputEl.value = lastStudentMessage ? lastStudentMessage.message : "";
 
   conversationHasMoreOlder = data.has_more;
   conversationNextCursor = data.next_cursor;
@@ -691,6 +711,50 @@ advisorReplyFormEl.addEventListener("submit", async (e) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
   });
+});
+
+askBotFormEl.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = askBotInputEl.value.trim();
+  if (!question || !activeSessionId) return;
+
+  const submitButton = askBotFormEl.querySelector("button[type=submit]");
+  submitButton.disabled = true;
+  askBotResultEl.hidden = true;
+  try {
+    const res = await adminFetch(`/api/admin/sessions/${encodeURIComponent(activeSessionId)}/ask-bot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      askBotAnswerEl.textContent = err.detail || "No se pudo consultar al asistente, intenta de nuevo.";
+      askBotSourcesEl.textContent = "";
+      askBotResultEl.hidden = false;
+      return;
+    }
+    const data = await res.json();
+    askBotAnswerEl.textContent = data.answer;
+    askBotSourcesEl.textContent = data.has_sufficient_info
+      ? (data.sources || []).map((s) => `${s.document} (pág. ${s.page})`).join(" · ")
+      : "El asistente no encontró suficiente información en la documentación -- revisa si igual sirve, o escribe la respuesta tú mismo.";
+    askBotResultEl.hidden = false;
+  } catch {
+    // adminFetch ya maneja el caso de token inválido mostrando el auth-gate.
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+askBotUseButtonEl.addEventListener("click", () => {
+  advisorReplyInputEl.value = askBotAnswerEl.textContent;
+  advisorReplyInputEl.focus();
+  askBotResultEl.hidden = true;
+});
+
+askBotDiscardButtonEl.addEventListener("click", () => {
+  askBotResultEl.hidden = true;
 });
 
 document.addEventListener("visibilitychange", () => {

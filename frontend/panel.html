@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel de Conversaciones - Facultad de Ingeniería</title>
-  <link rel="stylesheet" href="/static/panel.css?v=26" />
+  <link rel="stylesheet" href="/static/panel.css?v=27" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -58,6 +58,26 @@
           </div>
         </div>
         <div id="conversation-messages" class="conversation-messages"></div>
+        <div id="ask-bot-panel" class="ask-bot-panel" hidden>
+          <form id="ask-bot-form" class="ask-bot-form">
+            <input
+              id="ask-bot-input"
+              type="text"
+              maxlength="2000"
+              autocomplete="off"
+              placeholder="Reescribe la pregunta del estudiante para consultar al asistente..."
+            />
+            <button type="submit">Preguntar al asistente</button>
+          </form>
+          <div id="ask-bot-result" class="ask-bot-result" hidden>
+            <p id="ask-bot-answer" class="ask-bot-answer"></p>
+            <div id="ask-bot-sources" class="ask-bot-sources"></div>
+            <div class="ask-bot-actions">
+              <button id="ask-bot-use" type="button" class="primary-button">Usar esta respuesta</button>
+              <button id="ask-bot-discard" type="button" class="cancel-button">Descartar</button>
+            </div>
+          </div>
+        </div>
         <form id="advisor-reply-form" class="advisor-reply-form" hidden>
           <input id="advisor-reply-input" type="text" placeholder="Escribe tu respuesta como asesor..." maxlength="2000" autocomplete="off" />
           <button type="submit">Enviar</button>
@@ -66,6 +86,6 @@
     </div>
   </div>
 
-  <script src="/static/panel.js?v=25"></script>
+  <script src="/static/panel.js?v=26"></script>
 </body>
 </html>

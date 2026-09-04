@@ -22,6 +22,7 @@ from app.api.security import (
 )
 from app.config import settings
 from app.models.schemas import (
+    AdminAskBotRequest,
     AdminCreateRequest,
     AdminReplyRequest,
     AdminResponse,
@@ -393,6 +394,26 @@ def reply_to_session(
     _broadcast_session_event(session_id, event)
     ws_manager.broadcast_to_session(session_id, event)
     return {"status": "ok", "created_at": created_at}
+
+
+@router.post("/admin/sessions/{session_id}/ask-bot", response_model=ChatResponse)
+def ask_bot_for_session(
+    session_id: str, payload: AdminAskBotRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> ChatResponse:
+    """Herramienta de apoyo: el asesor le pide al chatbot un borrador de
+    respuesta para una pregunta (que puede reescribir/mejorar respecto a lo
+    que escribió el estudiante -- esa reescritura solo la ve el asesor). No
+    se guarda nada en el historial ni se le muestra nunca al estudiante; el
+    asesor decide si la usa (queda en su propio campo de respuesta para
+    revisar/editar y enviar manualmente) o la descarta y escribe la
+    respuesta a mano."""
+    _ensure_admin_can_act_on_session(session_id, identity)
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="GROQ_API_KEY no configurada en el servidor. Revisa el archivo .env.",
+        )
+    return chat_service.draft_answer_for_admin(session_id, payload.question)
 
 
 @router.post("/admin/sessions/{session_id}/ask-continue")

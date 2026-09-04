@@ -108,6 +108,43 @@ def _suggest_clarifications(question: str) -> List[str]:
     return llm.suggest_clarifying_questions(question, weak_candidates)
 
 
+def _draft_response(question: str, conversation_history: List[Tuple[str, str]]) -> Tuple[ChatResponse, str]:
+    """Núcleo compartido de recuperación + generación: arma el ChatResponse
+    completo (fuentes, sugerencias si no hay información suficiente,
+    métricas), sin decidir todavía si hay que revisar la escalación de la
+    sesión ni si hay que guardar el turno en el historial -- eso lo decide
+    cada llamador (answer_question guarda; draft_answer_for_admin no).
+    Devuelve también el texto plano de la respuesta, que answer_question
+    necesita para guardar el turno."""
+    total_start = time.perf_counter()
+    chunks, retrieval_ms = retrieve_context(question)
+
+    context = build_context(chunks) if chunks else ""
+
+    gen_start = time.perf_counter()
+    answer_text = llm.generate_answer(question, context, conversation_history)
+    generation_ms = (time.perf_counter() - gen_start) * 1000
+    total_ms = (time.perf_counter() - total_start) * 1000
+
+    is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
+    hide_sources = is_no_info or _looks_too_short_for_citation(question)
+    suggestions = _suggest_clarifications(question) if is_no_info else []
+
+    response = ChatResponse(
+        answer=answer_text,
+        sources=[] if hide_sources else _dedup_sources(chunks),
+        has_sufficient_info=not is_no_info,
+        suggestions=suggestions,
+        metrics=ChatMetrics(
+            retrieval_ms=round(retrieval_ms, 2),
+            generation_ms=round(generation_ms, 2),
+            total_ms=round(total_ms, 2),
+            chunks_retrieved=len(chunks),
+        ),
+    )
+    return response, answer_text
+
+
 def answer_question(session_id: str, question: str) -> ChatResponse:
     """Flujo completo sin streaming (usado por evaluación/tests y como fallback)."""
     if history_service.needs_human(session_id):
@@ -120,35 +157,26 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
             metrics=ChatMetrics(retrieval_ms=0.0, generation_ms=0.0, total_ms=0.0, chunks_retrieved=0),
         )
 
-    total_start = time.perf_counter()
-    chunks, retrieval_ms = retrieve_context(question)
-
-    context = build_context(chunks) if chunks else ""
     conversation_history = history_service.get_history(session_id)
-
-    gen_start = time.perf_counter()
-    answer_text = llm.generate_answer(question, context, conversation_history)
-    generation_ms = (time.perf_counter() - gen_start) * 1000
-
+    response, answer_text = _draft_response(question, conversation_history)
     _save_and_broadcast_turn(session_id, question, answer_text)
-    total_ms = (time.perf_counter() - total_start) * 1000
+    return response
 
-    is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
-    hide_sources = is_no_info or _looks_too_short_for_citation(question)
-    suggestions = _suggest_clarifications(question) if is_no_info else []
 
-    return ChatResponse(
-        answer=answer_text,
-        sources=[] if hide_sources else _dedup_sources(chunks),
-        has_sufficient_info=not is_no_info,
-        suggestions=suggestions,
-        metrics=ChatMetrics(
-            retrieval_ms=round(retrieval_ms, 2),
-            generation_ms=round(generation_ms, 2),
-            total_ms=round(total_ms, 2),
-            chunks_retrieved=len(chunks),
-        ),
-    )
+def draft_answer_for_admin(session_id: str, question: str) -> ChatResponse:
+    """Herramienta de apoyo para el asesor humano: le pide al chatbot un
+    borrador de respuesta para una pregunta -que puede ser una reescritura
+    mejorada de lo que escribió el estudiante- mientras atiende una
+    conversación ya escalada.
+
+    A diferencia de answer_question(), a propósito NO revisa needs_human()
+    (la sesión SIEMPRE está escalada cuando se usa esta herramienta -- por
+    eso el asesor necesita ayuda) y NO guarda nada en el historial del
+    estudiante: es una consulta de solo lectura que el asesor revisa antes
+    de decidir usarla (copiándola a su campo de respuesta) o descartarla."""
+    conversation_history = history_service.get_history(session_id)
+    response, _ = _draft_response(question, conversation_history)
+    return response
 
 
 def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]:

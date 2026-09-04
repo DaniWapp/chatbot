@@ -102,6 +102,10 @@ class AdminReplyRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
 
 
+class AdminAskBotRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
 class CheckinResponseRequest(BaseModel):
     wants_more_help: bool
 

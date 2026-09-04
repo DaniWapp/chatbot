@@ -160,6 +160,73 @@ def test_ask_continue_requires_admin_session():
     assert response.status_code == 401
 
 
+def test_ask_bot_requires_admin_session():
+    sid = "api-ask-bot-no-auth"
+    history_service.append_turn(sid, "hola", "respuesta")
+
+    response = client.post(f"/api/admin/sessions/{sid}/ask-bot", json={"question": "pregunta"})
+
+    assert response.status_code == 401
+
+
+def test_ask_bot_rejects_admin_without_access_to_session():
+    from unittest.mock import patch
+
+    root_token = _login_as(role="root")
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep Ask Bot", "description": "desc"}, headers=_auth_headers(root_token)
+    ).json()
+    general_token = _login_as(role="general")
+    sid = "api-ask-bot-no-access"
+    history_service.append_turn(sid, "hola", "respuesta")
+    with (
+        patch("app.rag.llm.classify_department", return_value=dep["id"]),
+        patch("app.services.chat_service.retrieve_context", return_value=([], 0.0)),
+    ):
+        client.post("/api/escalate", json={"session_id": sid, "name": "Estudiante", "email": "e@test.com"})
+
+    # El general aún no reclamó esta conversación (sigue asignada a `dep`),
+    # así que _ensure_admin_can_act_on_session debe rechazarlo con 403.
+    response = client.post(
+        f"/api/admin/sessions/{sid}/ask-bot", json={"question": "pregunta"}, headers=_auth_headers(general_token)
+    )
+
+    assert response.status_code == 403
+
+
+def test_ask_bot_returns_draft_without_saving_history():
+    from unittest.mock import patch
+
+    token = _login_as(role="general")
+    sid = "api-ask-bot-draft"
+    history_service.append_turn(sid, "hola", "respuesta")
+    with (
+        patch("app.rag.llm.classify_department", return_value=None),
+        patch("app.services.chat_service.retrieve_context", return_value=([], 0.0)),
+    ):
+        client.post("/api/escalate", json={"session_id": sid, "name": "Estudiante", "email": "e@test.com"})
+
+    history_before = history_service.get_history(sid)
+
+    with (
+        patch("app.services.chat_service.retrieve_context", return_value=([], 0.0)),
+        patch("app.rag.llm.generate_answer", return_value="Respuesta borrador del asistente."),
+    ):
+        response = client.post(
+            f"/api/admin/sessions/{sid}/ask-bot",
+            json={"question": "¿pregunta reescrita por el asesor?"},
+            headers=_auth_headers(token),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "Respuesta borrador del asistente."
+    assert body["has_sufficient_info"] is True
+
+    history_after = history_service.get_history(sid)
+    assert history_after == history_before
+
+
 def test_ingest_requires_root():
     token = _login_as(role="general")
 
