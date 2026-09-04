@@ -35,7 +35,7 @@ class Settings:
     # sugerencias de reformulación cuando no hay información suficiente (ver
     # chat_service.py) -- evita llamar al LLM cuando ni siquiera hay una
     # señal débil de relación con la pregunta.
-    SUGGESTION_MIN_SIMILARITY: float = _get_float("SUGGESTION_MIN_SIMILARITY", 0.25)
+    SUGGESTION_MIN_SIMILARITY: float = _get_float("SUGGESTION_MIN_SIMILARITY", 0.15)
 
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)

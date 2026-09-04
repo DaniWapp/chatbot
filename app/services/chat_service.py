@@ -77,13 +77,25 @@ def retrieve_context(question: str) -> Tuple[List[RetrievedChunk], float]:
     return chunks, retrieval_ms
 
 
+_SUGGESTION_CANDIDATE_POOL = 10
+
+
 def _suggest_clarifications(question: str) -> List[str]:
     """Cuando ya se determinó que no hay información suficiente, revisa si
     hay fragmentos con relación débil (por debajo de SIMILARITY_THRESHOLD)
     para pedirle al LLM hasta 3 preguntas alternativas mejor formuladas.
-    Ver llm.suggest_clarifying_questions -- best-effort, nunca lanza."""
+    Ver llm.suggest_clarifying_questions -- best-effort, nunca lanza.
+
+    Se busca en un top_k más amplio que el de recuperación normal
+    (settings.TOP_K, pensado solo para el contexto real de la respuesta):
+    con consultas muy abreviadas, el fragmento realmente relevante puede
+    quedar fuera del top 4 aunque exista en el índice (ver caso "ing tic"),
+    y el LLM ya actúa como filtro final de relevancia -- no hay costo real
+    en darle un lote más grande para revisar."""
     weak_candidates = [
-        c for c in retrieve_below_threshold(question) if c.similarity >= settings.SUGGESTION_MIN_SIMILARITY
+        c
+        for c in retrieve_below_threshold(question, top_k=_SUGGESTION_CANDIDATE_POOL)
+        if c.similarity >= settings.SUGGESTION_MIN_SIMILARITY
     ][:3]
     if not weak_candidates:
         return []
