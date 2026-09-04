@@ -723,9 +723,27 @@ body {
   overflow-y: auto;
 }
 
+.modal-content.wide {
+  max-width: 640px;
+}
+
 .modal-content h3 {
   margin: 0 0 16px;
   font-size: 15px;
+}
+
+.document-preview-text {
+  max-height: 55vh;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .modal-hint {

@@ -37,6 +37,7 @@ from app.models.schemas import (
     DependenciaResponse,
     DependenciaUpdateRequest,
     DocumentInfo,
+    DocumentPreviewResponse,
     DocumentRecategorizeRequest,
     EscalateRequest,
     FaqCandidateResponse,
@@ -54,6 +55,7 @@ from app.models.schemas import (
     SessionSummary,
 )
 from app.rag import llm, vector_store
+from app.rag.document_loader import DocumentLoadError, load_document
 from app.rag.embeddings import embed_query
 from app.services import admin_service
 from app.services import chat_service
@@ -794,6 +796,36 @@ def _delete_document(filename: str) -> None:
     vector_store.remove_document(safe_name)
 
 
+_PREVIEW_MAX_CHARS = 5000
+
+
+def _preview_document(filename: str) -> DocumentPreviewResponse:
+    """Extrae el texto de un documento ya subido, para que un administrador
+    pueda revisar qué es lo que realmente "ve" el chatbot de ese archivo
+    (útil para diagnosticar un PDF que extrae mal, o simplemente confirmar
+    el contenido antes de confiar en él). Vuelve a parsear el archivo cada
+    vez -- una operación manual y ocasional, no un camino caliente -- en
+    vez de leer los chunks ya indexados, para mostrar el texto real
+    incluso si el archivo cambió desde la última ingesta."""
+    safe_name = Path(filename).name
+    path = settings.DOCUMENTS_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No existe ese documento.")
+
+    try:
+        document = load_document(path)
+    except DocumentLoadError as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el documento: {exc}") from exc
+
+    full_text = "\n\n".join(page.text for page in document.pages).strip()
+    truncated = len(full_text) > _PREVIEW_MAX_CHARS
+    return DocumentPreviewResponse(
+        filename=safe_name,
+        text=full_text[:_PREVIEW_MAX_CHARS],
+        truncated=truncated,
+    )
+
+
 # --- Root: documentos (sin restricción de dependencia) --------------------
 
 
@@ -820,6 +852,13 @@ def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequ
 def delete_document_route(filename: str) -> IngestResponse:
     _delete_document(filename)
     return IngestResponse(status="ok", documents_processed=0, chunks_created=0, errors=[])
+
+
+@router.get(
+    "/root/documents/{filename}/preview", response_model=DocumentPreviewResponse, dependencies=[Depends(require_root)]
+)
+def preview_document_route(filename: str) -> DocumentPreviewResponse:
+    return _preview_document(filename)
 
 
 # --- Documentos desde /panel: general (paridad con root) y dependencia (solo lo suyo) ---
@@ -880,6 +919,23 @@ def delete_document_for_panel(
             raise HTTPException(status_code=403, detail="No tienes acceso a este documento.")
     _delete_document(filename)
     return IngestResponse(status="ok", documents_processed=0, chunks_created=0, errors=[])
+
+
+@router.get(
+    "/admin/documents/{filename}/preview",
+    response_model=DocumentPreviewResponse,
+    dependencies=[Depends(require_conversation_admin)],
+)
+def preview_document_for_panel(
+    filename: str, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> DocumentPreviewResponse:
+    """Mismo control de acceso que eliminar: el general puede previsualizar
+    cualquier documento, un administrador de dependencia solo los suyos."""
+    if identity.role == "dependencia":
+        safe_name = Path(filename).name
+        if ingest_service.get_document_dependencia(safe_name) != identity.dependencia_id:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este documento.")
+    return _preview_document(filename)
 
 
 # --- Root: propuestas de preguntas frecuentes ---------------------------

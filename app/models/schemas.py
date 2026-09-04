@@ -208,6 +208,12 @@ class DocumentRecategorizeRequest(BaseModel):
     dependencia_id: Optional[int] = None
 
 
+class DocumentPreviewResponse(BaseModel):
+    filename: str
+    text: str
+    truncated: bool
+
+
 class ReassignSessionRequest(BaseModel):
     dependencia_id: Optional[int] = None
 

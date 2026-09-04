@@ -267,3 +267,90 @@ def test_general_admin_can_recategorize_and_delete_any_document(tmp_path, monkey
 def test_admin_documents_requires_authentication():
     res = client.get("/api/admin/documents")
     assert res.status_code == 401
+
+
+# --- Vista previa del texto extraído -------------------------------------
+
+
+def test_root_can_preview_document_text(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+    (tmp_path / "preview.txt").write_text("Contenido de ejemplo para la vista previa.", encoding="utf-8")
+
+    res = client.get("/api/root/documents/preview.txt/preview", headers=_auth(token))
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["filename"] == "preview.txt"
+    assert body["text"] == "Contenido de ejemplo para la vista previa."
+    assert body["truncated"] is False
+
+
+def test_preview_truncates_long_documents(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.api import routes
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(routes, "_PREVIEW_MAX_CHARS", 20)
+    token = _login_as()
+    (tmp_path / "largo.txt").write_text("A" * 100, encoding="utf-8")
+
+    res = client.get("/api/root/documents/largo.txt/preview", headers=_auth(token))
+
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["text"]) == 20
+    assert body["truncated"] is True
+
+
+def test_preview_missing_document_returns_404(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    res = client.get("/api/root/documents/no-existe.txt/preview", headers=_auth(token))
+
+    assert res.status_code == 404
+
+
+def test_dependencia_admin_cannot_preview_document_of_another_dependencia(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep_a = client.post(
+        "/api/root/dependencias", json={"name": "Dep Preview A", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_b = client.post(
+        "/api/root/dependencias", json={"name": "Dep Preview B", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    token_a = _login_as(role="dependencia", dependencia_id=dep_a["id"])
+    token_b = _login_as(role="dependencia", dependencia_id=dep_b["id"])
+
+    _upload_via_panel(token_a, "solo-a-preview.txt")
+
+    res_denied = client.get("/api/admin/documents/solo-a-preview.txt/preview", headers=_auth(token_b))
+    assert res_denied.status_code == 403
+
+    res_ok = client.get("/api/admin/documents/solo-a-preview.txt/preview", headers=_auth(token_a))
+    assert res_ok.status_code == 200
+
+
+def test_general_admin_can_preview_any_document(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep Preview General", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_token = _login_as(role="dependencia", dependencia_id=dep["id"])
+    general_token = _login_as(role="general")
+
+    _upload_via_panel(dep_token, "de-dependencia-preview.txt")
+
+    res = client.get("/api/admin/documents/de-dependencia-preview.txt/preview", headers=_auth(general_token))
+    assert res.status_code == 200

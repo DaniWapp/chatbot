@@ -149,7 +149,8 @@ async function tryEnterPanel() {
 
 // --- Modal genérico ------------------------------------------------------
 
-function openModal(html) {
+function openModal(html, { wide = false } = {}) {
+  modalContentEl.className = wide ? "modal-content wide" : "modal-content";
   modalContentEl.innerHTML = html;
   modalOverlayEl.hidden = false;
   const cancelButton = modalContentEl.querySelector(".cancel-button");
@@ -218,6 +219,7 @@ async function openDocumentsModal() {
           <td>
             <div class="row-actions">
               ${recategorizeControl}
+              <button type="button" class="preview-doc-button" data-filename="${escapeHtml(doc.filename)}">Vista previa</button>
               <button type="button" class="danger delete-doc-button" data-filename="${escapeHtml(doc.filename)}">Eliminar</button>
             </div>
           </td>
@@ -252,6 +254,9 @@ async function openDocumentsModal() {
     </div>
   `);
 
+  modalContentEl.querySelectorAll(".preview-doc-button").forEach((button) => {
+    button.addEventListener("click", () => previewPanelDocument(button.dataset.filename));
+  });
   modalContentEl.querySelectorAll(".delete-doc-button").forEach((button) => {
     button.addEventListener("click", () => deletePanelDocument(button.dataset.filename));
   });
@@ -355,6 +360,37 @@ async function deletePanelDocument(filename) {
     // adminFetch ya maneja el caso de sesión inválida.
   } finally {
     await openDocumentsModal();
+  }
+}
+
+async function previewPanelDocument(filename) {
+  openModal(`<h3>Vista previa: ${escapeHtml(filename)}</h3><p>Cargando...</p>`, { wide: true });
+  try {
+    const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}/preview`);
+    if (!res.ok) {
+      openModal(
+        `<h3>Vista previa: ${escapeHtml(filename)}</h3><p class="modal-error">${escapeHtml(await errorDetail(res))}</p><div class="modal-actions"><button type="button" class="cancel-button">Cerrar</button></div>`,
+        { wide: true }
+      );
+      return;
+    }
+    const data = await res.json();
+    const truncatedNote = data.truncated
+      ? `<p class="modal-hint">Mostrando solo los primeros ${data.text.length.toLocaleString("es")} caracteres del texto extraído.</p>`
+      : "";
+    openModal(
+      `
+      <h3>Vista previa: ${escapeHtml(data.filename)}</h3>
+      ${truncatedNote}
+      <pre class="document-preview-text">${escapeHtml(data.text) || "(el documento no tiene texto extraíble)"}</pre>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button">Cerrar</button>
+      </div>
+    `,
+      { wide: true }
+    );
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
   }
 }
 

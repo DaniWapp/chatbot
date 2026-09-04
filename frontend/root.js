@@ -131,7 +131,8 @@ document.querySelectorAll(".root-tab").forEach((tab) => {
 
 // --- Modal genérico ------------------------------------------------------
 
-function openModal(html) {
+function openModal(html, { wide = false } = {}) {
+  modalContentEl.className = wide ? "modal-content wide" : "modal-content";
   modalContentEl.innerHTML = html;
   modalOverlayEl.hidden = false;
   const cancelButton = modalContentEl.querySelector(".cancel-button");
@@ -591,12 +592,49 @@ function renderDocumentsTable() {
       <td>${escapeHtml(doc.filename)}</td>
       <td>${formatSize(doc.size_bytes)}</td>
       <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select></td>
-      <td><div class="row-actions"><button type="button" class="danger delete-button">Eliminar</button></div></td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="preview-button">Vista previa</button>
+          <button type="button" class="danger delete-button">Eliminar</button>
+        </div>
+      </td>
     `;
     const select = tr.querySelector(".doc-dependencia-select");
     select.addEventListener("change", () => recategorizeDocument(doc, select));
+    tr.querySelector(".preview-button").addEventListener("click", () => previewDocument(doc.filename, "/api/root/documents"));
     tr.querySelector(".delete-button").addEventListener("click", () => deleteDocument(doc));
     tbody.appendChild(tr);
+  }
+}
+
+async function previewDocument(filename, basePath) {
+  openModal(`<h3>Vista previa: ${escapeHtml(filename)}</h3><p>Cargando...</p>`, { wide: true });
+  try {
+    const res = await rootFetch(`${basePath}/${encodeURIComponent(filename)}/preview`);
+    if (!res.ok) {
+      openModal(
+        `<h3>Vista previa: ${escapeHtml(filename)}</h3><p class="modal-error">${escapeHtml(await errorDetail(res))}</p><div class="modal-actions"><button type="button" class="cancel-button">Cerrar</button></div>`,
+        { wide: true }
+      );
+      return;
+    }
+    const data = await res.json();
+    const truncatedNote = data.truncated
+      ? `<p class="modal-hint">Mostrando solo los primeros ${data.text.length.toLocaleString("es")} caracteres del texto extraído.</p>`
+      : "";
+    openModal(
+      `
+      <h3>Vista previa: ${escapeHtml(data.filename)}</h3>
+      ${truncatedNote}
+      <pre class="document-preview-text">${escapeHtml(data.text) || "(el documento no tiene texto extraíble)"}</pre>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button">Cerrar</button>
+      </div>
+    `,
+      { wide: true }
+    );
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
   }
 }
 
