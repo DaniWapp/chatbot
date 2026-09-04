@@ -89,14 +89,20 @@ def _suggest_clarifications(question: str) -> List[str]:
     Se busca en un top_k más amplio que el de recuperación normal
     (settings.TOP_K, pensado solo para el contexto real de la respuesta):
     con consultas muy abreviadas, el fragmento realmente relevante puede
-    quedar fuera del top 4 aunque exista en el índice (ver caso "ing tic"),
-    y el LLM ya actúa como filtro final de relevancia -- no hay costo real
-    en darle un lote más grande para revisar."""
+    quedar fuera del top 4 aunque exista en el índice (ver caso "ing tic").
+
+    A propósito NO se recorta a los 3 candidatos de mayor similitud antes
+    de llamar al LLM: en un corpus pequeño con muchas filas de horario, esas
+    filas suelen ganar por similitud cruda a un fragmento realmente
+    relevante pero más largo/distinto en redacción (como una FAQ), sin
+    tener ninguna relación real con la pregunta. Se le pasa el lote
+    completo (ya filtrado por SUGGESTION_MIN_SIMILARITY) y es el LLM quien
+    decide cuáles -si alguno- están realmente relacionados."""
     weak_candidates = [
         c
         for c in retrieve_below_threshold(question, top_k=_SUGGESTION_CANDIDATE_POOL)
         if c.similarity >= settings.SUGGESTION_MIN_SIMILARITY
-    ][:3]
+    ]
     if not weak_candidates:
         return []
     return llm.suggest_clarifying_questions(question, weak_candidates)
