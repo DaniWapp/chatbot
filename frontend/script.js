@@ -522,12 +522,25 @@ async function checkSessionStatus() {
   }
 }
 
+// El indicador de "escribiendo" (los 3 punticos) debe verse al menos este
+// tiempo, sin importar qué tan rápido llegue la respuesta -- una respuesta
+// servida desde caché puede resolver en pocos ms, y desaparecer el
+// indicador casi al instante se siente artificial/roto. Pasado este
+// tiempo, se muestra el contenido completo de una vez (sin animación de
+// tecleo), tanto si vino de caché como de Groq.
+const MIN_TYPING_INDICATOR_MS = 300;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function sendMessage(text) {
   hideEmptyState();
   if (!isEscalated) markSolvedButton.hidden = false;
   addUserMessage(text);
   const block = addAssistantPlaceholder();
   const bubble = block.querySelector(".bubble");
+  const placeholderShownAt = performance.now();
 
   sendButton.disabled = true;
 
@@ -549,10 +562,10 @@ async function sendMessage(text) {
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
     let answerText = "";
-    let firstDelta = true;
     let sources = [];
     let suggestions = [];
     let wasEscalated = false;
+    let errorMessage = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -575,22 +588,19 @@ async function sendMessage(text) {
           continue;
         }
 
+        // A propósito no se toca el DOM aquí por cada delta: se acumula el
+        // texto completo y recién se muestra de una sola vez más abajo,
+        // una vez cumplido MIN_TYPING_INDICATOR_MS -- ver comentario arriba.
         if (event.type === "meta") {
           sources = event.sources || [];
         } else if (event.type === "delta") {
-          if (firstDelta) {
-            bubble.textContent = "";
-            firstDelta = false;
-          }
           answerText += event.text;
-          bubble.innerHTML = renderMarkdownHtml(answerText);
-          scrollToBottom();
         } else if (event.type === "escalated") {
           wasEscalated = true;
         } else if (event.type === "done") {
           suggestions = event.suggestions || [];
         } else if (event.type === "error") {
-          bubble.textContent = "Error: " + event.message;
+          errorMessage = event.message;
         }
       }
     }
@@ -602,17 +612,25 @@ async function sendMessage(text) {
     // reloj no rompe nada ahí.
     latestRenderedMessageAt = new Date().toISOString();
 
+    const remaining = MIN_TYPING_INDICATOR_MS - (performance.now() - placeholderShownAt);
+    if (remaining > 0) await wait(remaining);
+
     if (wasEscalated) {
       // La barra persistente ya avisa que un asesor está atendiendo; no hace
       // falta repetirlo en cada mensaje. Se quita el placeholder: el mensaje
       // del estudiante, ya visible, es suficiente contexto.
       block.remove();
-    } else if (answerText.trim() === NO_INFO_TEXT) {
-      bubble.classList.add("no-info");
-      addSuggestionOptions(block, suggestions);
-      addEscalationOption(block);
+    } else if (errorMessage) {
+      bubble.textContent = "Error: " + errorMessage;
     } else {
-      renderSources(block, sources);
+      bubble.innerHTML = renderMarkdownHtml(answerText);
+      if (answerText.trim() === NO_INFO_TEXT) {
+        bubble.classList.add("no-info");
+        addSuggestionOptions(block, suggestions);
+        addEscalationOption(block);
+      } else {
+        renderSources(block, sources);
+      }
     }
   } catch (err) {
     bubble.textContent = "No se pudo conectar con el servidor. Verifica que el backend esté activo.";
