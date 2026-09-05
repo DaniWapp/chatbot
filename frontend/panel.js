@@ -31,7 +31,8 @@ const askBotDiscardButtonEl = document.getElementById("ask-bot-discard");
 const wsStatusEl = document.getElementById("ws-status");
 const panelBodyEl = document.querySelector(".panel-body");
 const backToListButton = document.getElementById("back-to-list");
-const documentsButtonEl = document.getElementById("documents-button");
+const documentsTabButtonEl = document.getElementById("documents-tab-button");
+const dashboardTabButtonEl = document.getElementById("dashboard-tab-button");
 const modalOverlayEl = document.getElementById("modal-overlay");
 const modalContentEl = document.getElementById("modal-content");
 
@@ -136,9 +137,12 @@ async function tryEnterPanel() {
     await loadDependenciasForReassign();
     adminDisplayNameEl.textContent = formatAdminIdentityLabel();
     // El root no llega a /panel (require_conversation_admin lo bloquea), así
-    // que este botón siempre aplica para quien sí logra entrar aquí: general
-    // (paridad con root en documentos) o dependencia (solo los suyos).
-    documentsButtonEl.hidden = false;
+    // que estas pestañas siempre aplican para quien sí logra entrar aquí:
+    // general (paridad con root en documentos) o dependencia (solo lo suyo).
+    dashboardTabButtonEl.hidden = false;
+    documentsTabButtonEl.hidden = false;
+    await loadDashboard();
+    await loadDocuments();
     authGateEl.hidden = true;
     panelAppEl.hidden = false;
     connectWebSocket();
@@ -146,6 +150,17 @@ async function tryEnterPanel() {
     // adminFetch ya mostró el auth-gate con el mensaje de error si la sesión era inválida.
   }
 }
+
+// --- Pestañas ------------------------------------------------------------
+
+document.querySelectorAll(".panel-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".panel-tab").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".panel-tab-panel").forEach((p) => (p.hidden = true));
+    document.getElementById(`tab-${tab.dataset.tab}`).hidden = false;
+  });
+});
 
 // --- Modal genérico ------------------------------------------------------
 
@@ -180,7 +195,111 @@ async function errorDetail(res) {
   return body.detail || "Ocurrió un error.";
 }
 
-// --- Documentos (modal): general con paridad de root, dependencia solo lo suyo ---
+// --- Dashboard (pestaña): general ve agregado de todas las dependencias, dependencia solo lo suyo ---
+
+let panelDashboardChart = null;
+
+function formatMinutes(minutes) {
+  if (minutes == null) return "—";
+  if (minutes < 60) return `${minutes.toFixed(1)} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+
+function dashboardCardHtml(label, value) {
+  return `
+    <div class="dashboard-card">
+      <span class="dashboard-card-value">${value}</span>
+      <span class="dashboard-card-label">${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
+function dashboardCardsHtml(dashboard) {
+  const c = dashboard.conversations;
+  const d = dashboard.documents;
+  const f = dashboard.faq;
+  const cards = [
+    ["Conversaciones escaladas", c.total_escalated],
+    ["Resueltas", c.resolved],
+    ["Pendientes ahora", c.pending_now],
+    ["Escaladas en los últimos 7 días", c.last_7_days],
+    ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
+    ["Resolución (promedio)", formatMinutes(c.avg_resolution_minutes)],
+    ["Documentos indexados", d.total],
+    ["Tamaño total de documentos", formatSize(d.total_size_bytes)],
+    ["FAQ pendientes por revisar", f.pending],
+    ["FAQ aceptadas", f.accepted],
+  ];
+  return cards.map(([label, value]) => dashboardCardHtml(label, value)).join("");
+}
+
+function renderDashboardChart(dashboard) {
+  const canvas = document.getElementById("panel-dashboard-conversations-chart");
+  const trend = dashboard.conversations.daily_trend || [];
+
+  if (panelDashboardChart) panelDashboardChart.destroy();
+  panelDashboardChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: trend.map((point) => point.date),
+      datasets: [
+        {
+          label: "Conversaciones",
+          data: trend.map((point) => point.count),
+          borderColor: "#5b21b6",
+          backgroundColor: "#5b21b626",
+          tension: 0.25,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderDashboardByDependenciaTable(dashboard) {
+  const tbody = document.getElementById("panel-dashboard-by-dependencia-body");
+  if (!tbody) return;
+  const rows = dashboard.conversations.by_dependencia || [];
+  tbody.innerHTML = rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.total}</td></tr>`).join("");
+}
+
+function renderDashboardRecentDocumentsTable(dashboard) {
+  const tbody = document.getElementById("panel-dashboard-recent-documents-body");
+  const rows = dashboard.documents.recent || [];
+  tbody.innerHTML = rows
+    .map((row) => `<tr><td>${escapeHtml(row.filename)}</td><td>${formatTime(row.modified_at)}</td></tr>`)
+    .join("");
+}
+
+async function loadDashboard() {
+  const isGeneral = getAdminRole() === "general";
+  let dashboard;
+  try {
+    const res = await adminFetch("/api/dashboard");
+    dashboard = await res.json();
+  } catch {
+    return; // adminFetch ya maneja el caso de sesión inválida.
+  }
+
+  document.getElementById("panel-dashboard-title").textContent = isGeneral
+    ? "Dashboard"
+    : `Dashboard de ${dependenciaNameById(getAdminDependenciaId())}`;
+  document.getElementById("panel-dashboard-cards").innerHTML = dashboardCardsHtml(dashboard);
+  renderDashboardChart(dashboard);
+
+  const byDependenciaCard = document.getElementById("panel-dashboard-by-dependencia-card");
+  byDependenciaCard.hidden = !isGeneral;
+  if (isGeneral) renderDashboardByDependenciaTable(dashboard);
+
+  renderDashboardRecentDocumentsTable(dashboard);
+}
+
+// --- Documentos (pestaña, con modales solo para subir/vista previa): general con paridad de root, dependencia solo lo suyo ---
 
 function dependenciaNameById(id) {
   const dep = dependenciasForReassign.find((d) => d.id === id);
@@ -240,20 +359,20 @@ function rerenderPanelDocumentsTable(isGeneral) {
   if (!tbody) return;
   tbody.innerHTML = buildPanelDocumentsRowsHtml(isGeneral);
 
-  modalContentEl.querySelectorAll(".preview-doc-button").forEach((button) => {
+  tbody.querySelectorAll(".preview-doc-button").forEach((button) => {
     button.addEventListener("click", () => previewPanelDocument(button.dataset.filename));
   });
-  modalContentEl.querySelectorAll(".delete-doc-button").forEach((button) => {
+  tbody.querySelectorAll(".delete-doc-button").forEach((button) => {
     button.addEventListener("click", () => deletePanelDocument(button.dataset.filename));
   });
   if (isGeneral) {
-    modalContentEl.querySelectorAll(".doc-dependencia-select").forEach((select) => {
+    tbody.querySelectorAll(".doc-dependencia-select").forEach((select) => {
       select.addEventListener("change", () => recategorizePanelDocument(select.dataset.filename, select));
     });
   }
 }
 
-async function openDocumentsModal() {
+async function loadDocuments() {
   const isGeneral = getAdminRole() === "general";
   try {
     const res = await adminFetch("/api/admin/documents");
@@ -262,37 +381,21 @@ async function openDocumentsModal() {
     return; // adminFetch ya maneja el caso de sesión inválida.
   }
 
-  const modalTitle = isGeneral
+  document.getElementById("panel-documents-title").textContent = isGeneral
     ? "Documentos"
-    : `Documentos de ${escapeHtml(dependenciaNameById(getAdminDependenciaId()))}`;
-
-  openModal(`
-    <div class="panel-section-header">
-      <h3>${modalTitle}</h3>
-      <button type="button" id="panel-new-document-button" class="primary-button">+ Subir documento</button>
-    </div>
-    <input id="panel-documents-search" type="text" class="search-input" placeholder="Buscar documento por nombre..." />
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Archivo</th>
-          <th>Tamaño</th>
-          ${isGeneral ? "<th>Dependencia</th>" : ""}
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="panel-documents-table-body"></tbody>
-    </table>
-    <p id="panel-documents-empty" class="empty-hint" hidden></p>
-    <div class="modal-actions">
-      <button type="button" class="cancel-button">Cerrar</button>
-    </div>
-  `);
+    : `Documentos de ${dependenciaNameById(getAdminDependenciaId())}`;
+  document.getElementById("panel-documents-table-head").innerHTML = `
+    <th>Archivo</th>
+    <th>Tamaño</th>
+    ${isGeneral ? "<th>Dependencia</th>" : ""}
+    <th></th>
+  `;
 
   rerenderPanelDocumentsTable(isGeneral);
-  document.getElementById("panel-documents-search").addEventListener("input", () => rerenderPanelDocumentsTable(isGeneral));
-  document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
 }
+
+document.getElementById("panel-documents-search").addEventListener("input", () => rerenderPanelDocumentsTable(getAdminRole() === "general"));
+document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
 
 function openUploadDocumentModal() {
   const isGeneral = getAdminRole() === "general";
@@ -348,7 +451,8 @@ function openUploadDocumentModal() {
       const res = await adminFetch("/api/admin/documents", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await errorDetail(res));
       const data = await res.json();
-      await openDocumentsModal();
+      closeModal();
+      await loadDocuments();
       if (data.final_filename && data.final_filename !== file.name) {
         alert(`El documento se guardó como "${data.final_filename}".`);
       }
@@ -374,7 +478,7 @@ async function recategorizePanelDocument(filename, selectEl) {
   } catch {
     // adminFetch ya maneja el caso de sesión inválida.
   } finally {
-    await openDocumentsModal();
+    await loadDocuments();
   }
 }
 
@@ -389,7 +493,7 @@ async function deletePanelDocument(filename) {
   } catch {
     // adminFetch ya maneja el caso de sesión inválida.
   } finally {
-    await openDocumentsModal();
+    await loadDocuments();
   }
 }
 
@@ -423,8 +527,6 @@ async function previewPanelDocument(filename) {
     // adminFetch ya maneja el caso de sesión inválida.
   }
 }
-
-documentsButtonEl.addEventListener("click", openDocumentsModal);
 
 authFormEl.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -772,7 +874,12 @@ function buildMessageElement(sender, message, createdAt, isEscalationTrigger) {
     <div class="message-text"></div>
     <span class="message-time"></span>
   `;
-  div.querySelector(".message-text").textContent = message;
+  const textEl = div.querySelector(".message-text");
+  if (sender === "student") {
+    textEl.textContent = message;
+  } else {
+    textEl.innerHTML = renderMarkdownHtml(message);
+  }
   div.querySelector(".message-time").textContent = formatTime(createdAt);
   return div;
 }
@@ -1012,6 +1119,12 @@ advisorReplyFormEl.addEventListener("submit", async (e) => {
   });
 });
 
+// Se guarda aparte del DOM (en vez de leer askBotAnswerEl.textContent) porque
+// ese elemento ahora contiene el markdown ya renderizado a HTML -- su
+// textContent pierde la sintaxis original (**negrita**, tablas con "|"), que
+// es justo lo que se quiere conservar al copiarla a la respuesta del asesor.
+let lastAskBotAnswerRaw = "";
+
 askBotFormEl.addEventListener("submit", async (e) => {
   e.preventDefault();
   const question = askBotInputEl.value.trim();
@@ -1028,13 +1141,15 @@ askBotFormEl.addEventListener("submit", async (e) => {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      askBotAnswerEl.textContent = err.detail || "No se pudo consultar al asistente, intenta de nuevo.";
+      lastAskBotAnswerRaw = err.detail || "No se pudo consultar al asistente, intenta de nuevo.";
+      askBotAnswerEl.textContent = lastAskBotAnswerRaw;
       askBotSourcesEl.textContent = "";
       askBotResultEl.hidden = false;
       return;
     }
     const data = await res.json();
-    askBotAnswerEl.textContent = data.answer;
+    lastAskBotAnswerRaw = data.answer;
+    askBotAnswerEl.innerHTML = renderMarkdownHtml(data.answer);
     askBotSourcesEl.textContent = data.has_sufficient_info
       ? (data.sources || []).map((s) => `${s.document} (pág. ${s.page})`).join(" · ")
       : "El asistente no encontró suficiente información en la documentación -- revisa si igual sirve, o escribe la respuesta tú mismo.";
@@ -1047,7 +1162,7 @@ askBotFormEl.addEventListener("submit", async (e) => {
 });
 
 askBotUseButtonEl.addEventListener("click", () => {
-  advisorReplyInputEl.value = askBotAnswerEl.textContent;
+  advisorReplyInputEl.value = lastAskBotAnswerRaw;
   advisorReplyInputEl.focus();
   askBotResultEl.hidden = true;
 });

@@ -128,7 +128,7 @@ function buildAssistantMessageEl(text) {
       <div class="bubble"></div>
     </div>
   `;
-  block.querySelector(".bubble").textContent = text;
+  block.querySelector(".bubble").innerHTML = renderMarkdownHtml(text);
   return block;
 }
 
@@ -148,7 +148,7 @@ function renderSources(block, sources) {
       return `<li>${escapeHtml(s.document)}${page}</li>`;
     })
     .join("");
-  container.innerHTML = `<div class="sources-title">Fuentes:</div><ul>${items}</ul>`;
+  container.innerHTML = `<div class="sources-title">Archivos consultados:</div><ul>${items}</ul>`;
   block.appendChild(container);
 }
 
@@ -178,7 +178,7 @@ function buildAdvisorMessageEl(text) {
       </div>
     </div>
   `;
-  block.querySelector(".advisor-text").textContent = text;
+  block.querySelector(".advisor-text").innerHTML = renderMarkdownHtml(text);
   return block;
 }
 
@@ -583,7 +583,7 @@ async function sendMessage(text) {
             firstDelta = false;
           }
           answerText += event.text;
-          bubble.textContent = answerText;
+          bubble.innerHTML = renderMarkdownHtml(answerText);
           scrollToBottom();
         } else if (event.type === "escalated") {
           wasEscalated = true;

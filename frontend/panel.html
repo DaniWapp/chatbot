@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=32" />
+  <link rel="stylesheet" href="/static/panel.css?v=36" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -26,15 +26,26 @@
       <div class="header-title">
         <h1>Panel de Conversaciones</h1>
         <p id="admin-display-name">Facultad de Ingeniería</p>
+        <span id="ws-status" class="ws-status offline">Conectando</span>
       </div>
       <div class="header-actions">
-        <span id="ws-status" class="ws-status offline">Conectando</span>
-        <button id="documents-button" class="logout-button" type="button" hidden>Documentos</button>
-        <button id="logout-button" class="logout-button" type="button">Cerrar sesión</button>
+        <button id="logout-button" class="icon-button" type="button" title="Cerrar sesión" aria-label="Cerrar sesión">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
       </div>
     </header>
 
-    <div class="panel-body">
+    <nav class="panel-tabs">
+      <button class="panel-tab active" data-tab="conversaciones" type="button">Conversaciones</button>
+      <button class="panel-tab" data-tab="dashboard" type="button" id="dashboard-tab-button" hidden>Dashboard</button>
+      <button class="panel-tab" data-tab="documentos" type="button" id="documents-tab-button" hidden>Documentos</button>
+    </nav>
+
+    <div id="tab-conversaciones" class="panel-tab-panel panel-body">
       <aside class="session-list-panel">
         <div class="session-list-header">
           <span id="session-count">0 conversaciones</span>
@@ -74,7 +85,7 @@
             <button type="submit">Preguntar al asistente</button>
           </form>
           <div id="ask-bot-result" class="ask-bot-result" hidden>
-            <p id="ask-bot-answer" class="ask-bot-answer"></p>
+            <div id="ask-bot-answer" class="ask-bot-answer"></div>
             <div id="ask-bot-sources" class="ask-bot-sources"></div>
             <div class="ask-bot-actions">
               <button id="ask-bot-use" type="button" class="primary-button">Usar esta respuesta</button>
@@ -88,12 +99,64 @@
         </form>
       </main>
     </div>
+
+    <section id="tab-dashboard" class="panel-tab-panel" hidden>
+      <div class="panel-section-header">
+        <h2 id="panel-dashboard-title">Dashboard</h2>
+      </div>
+      <div id="panel-dashboard-cards" class="dashboard-cards"></div>
+      <div class="dashboard-charts">
+        <div class="dashboard-chart-card">
+          <h4>Conversaciones escaladas por día (últimos 30 días)</h4>
+          <canvas id="panel-dashboard-conversations-chart"></canvas>
+        </div>
+      </div>
+      <div class="dashboard-tables">
+        <div class="dashboard-table-card" id="panel-dashboard-by-dependencia-card" hidden>
+          <h4>Conversaciones por dependencia</h4>
+          <table class="data-table">
+            <thead><tr><th>Dependencia</th><th>Conversaciones</th></tr></thead>
+            <tbody id="panel-dashboard-by-dependencia-body"></tbody>
+          </table>
+        </div>
+        <div class="dashboard-table-card">
+          <h4>Documentos recientes</h4>
+          <table class="data-table">
+            <thead><tr><th>Archivo</th><th>Actualizado</th></tr></thead>
+            <tbody id="panel-dashboard-recent-documents-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-documentos" class="panel-tab-panel" hidden>
+      <div class="panel-section-header">
+        <h2 id="panel-documents-title">Documentos</h2>
+        <button id="panel-new-document-button" class="primary-button" type="button">+ Subir documento</button>
+      </div>
+      <input id="panel-documents-search" type="text" class="search-input" placeholder="Buscar documento por nombre..." />
+      <table class="data-table">
+        <thead>
+          <tr id="panel-documents-table-head">
+            <th>Archivo</th>
+            <th>Tamaño</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="panel-documents-table-body"></tbody>
+      </table>
+      <p id="panel-documents-empty" class="empty-hint" hidden></p>
+    </section>
   </div>
 
   <div id="modal-overlay" class="modal-overlay" hidden>
     <div id="modal-content" class="modal-content"></div>
   </div>
 
-  <script src="/static/panel.js?v=33"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/markdown-render.js"></script>
+  <script src="/static/panel.js?v=36"></script>
 </body>
 </html>
