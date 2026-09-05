@@ -1,6 +1,14 @@
 Pregunta: ¿Existe la carrera de Derecho?
 Respuesta: Sí, la carrera de Derecho está disponible. Puedes consultar los requisitos de admisión, planes de estudio y oportunidades profesionales en la página oficial de la universidad o en la oficina de registro académico.
 
+Pregunta: ¿Ofrecen la carrera de Sistemas?
+Respuesta: No contamos con la carrera de Sistemas. Sin embargo, ofrecemos la Ingeniería en Tecnologías de la Información y las Comunicaciones (TIC), la cual tiene una duración de 8 semestres.
+
+Pregunta: ¿Cuántos semestres tiene el programa de Ingeniería en Tecnologías de la Información y Comunicación?
+Respuesta: El programa de Ingeniería en Tecnologías de la Información y Comunicación (TIC) se estructura en 8 semestres académicos.
+
+Pregunta: ¿Cuál es la duración de la carrera de Ingeniería en Tecnologías de la Información y la Comunicación (TIC)?
+Respuesta: La carrera de Ingeniería en Tecnologías de la Información y la Comunicación (TIC) tiene una duración de ocho semestres, equivalente a cuatro años académicos. Esta estructura permite a los estudiantes completar los requisitos curriculares y prácticos necesarios para graduarse como ingenieros en el campo de las TIC.
+
 Pregunta: ¿Cuál es el precio del semestre de ingeniería ambiental para el año 2026?
 Respuesta: El costo del semestre de ingeniería ambiental para el año 2026 es de $4.000.000.
-
