@@ -552,6 +552,12 @@ function dashboardCardsHtml(dashboard) {
       "Tiempo de respuesta del bot (promedio)",
       dashboard.performance.avg_total_ms != null ? `${dashboard.performance.avg_total_ms} ms` : "—",
     ]);
+    cards.push([
+      "Respuestas servidas desde caché",
+      dashboard.performance.cache_hit_rate != null
+        ? `${dashboard.performance.cache_hits} (${dashboard.performance.cache_hit_rate}%)`
+        : dashboard.performance.cache_hits,
+    ]);
     cards.push(["Llamadas a Groq (total)", dashboard.performance.groq_calls_total]);
     cards.push(["Llamadas a Groq (últimos 7 días)", dashboard.performance.groq_calls_last_7_days]);
     cards.push(["Llamadas a Groq fallidas", dashboard.performance.groq_calls_failed]);

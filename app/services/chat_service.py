@@ -15,6 +15,7 @@ from app.config import settings
 from app.models.schemas import ChatMetrics, ChatResponse, SourceCitation
 from app.rag import llm
 from app.rag.retriever import RetrievedChunk, build_context, retrieve, retrieve_below_threshold
+from app.services import answer_cache_service
 from app.services import history as history_service
 from app.services import ws_manager
 
@@ -121,10 +122,13 @@ def _draft_response(
     total_start = time.perf_counter()
     chunks, retrieval_ms = retrieve_context(question)
 
-    context = build_context(chunks) if chunks else ""
-
+    cached_answer = answer_cache_service.try_get_cached_answer(question, chunks)
     gen_start = time.perf_counter()
-    answer_text = llm.generate_answer(question, context, conversation_history)
+    if cached_answer is not None:
+        answer_text = cached_answer
+    else:
+        context = build_context(chunks) if chunks else ""
+        answer_text = llm.generate_answer(question, context, conversation_history)
     generation_ms = (time.perf_counter() - gen_start) * 1000
     total_ms = (time.perf_counter() - total_start) * 1000
 
@@ -132,8 +136,16 @@ def _draft_response(
     hide_sources = is_no_info or _looks_too_short_for_citation(question)
     suggestions = _suggest_clarifications(question) if is_no_info else []
 
+    if cached_answer is None:
+        answer_cache_service.maybe_store_answer(question, chunks, answer_text)
+
     history_service.record_chat_metrics(
-        session_id, round(retrieval_ms, 2), round(generation_ms, 2), round(total_ms, 2), len(chunks)
+        session_id,
+        round(retrieval_ms, 2),
+        round(generation_ms, 2),
+        round(total_ms, 2),
+        len(chunks),
+        cache_hit=cached_answer is not None,
     )
 
     response = ChatResponse(
@@ -201,17 +213,22 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
 
     chunks, retrieval_ms = retrieve_context(question)
 
-    context = build_context(chunks) if chunks else ""
-    conversation_history = history_service.get_history(session_id)
     sources = _dedup_sources(chunks) if chunks and not _looks_too_short_for_citation(question) else []
 
     yield {"type": "meta", "sources": [s.model_dump() for s in sources], "has_sufficient_info": bool(chunks)}
 
+    cached_answer = answer_cache_service.try_get_cached_answer(question, chunks)
     gen_start = time.perf_counter()
-    full_answer = ""
-    for delta in llm.stream_answer(question, context, conversation_history):
-        full_answer += delta
-        yield {"type": "delta", "text": delta}
+    if cached_answer is not None:
+        full_answer = cached_answer
+        yield {"type": "delta", "text": full_answer}
+    else:
+        context = build_context(chunks) if chunks else ""
+        conversation_history = history_service.get_history(session_id)
+        full_answer = ""
+        for delta in llm.stream_answer(question, context, conversation_history):
+            full_answer += delta
+            yield {"type": "delta", "text": delta}
     generation_ms = (time.perf_counter() - gen_start) * 1000
 
     _save_and_broadcast_turn(session_id, question, full_answer)
@@ -219,8 +236,16 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
     is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
     suggestions = _suggest_clarifications(question) if is_no_info else []
 
+    if cached_answer is None:
+        answer_cache_service.maybe_store_answer(question, chunks, full_answer)
+
     history_service.record_chat_metrics(
-        session_id, round(retrieval_ms, 2), round(generation_ms, 2), round(retrieval_ms + generation_ms, 2), len(chunks)
+        session_id,
+        round(retrieval_ms, 2),
+        round(generation_ms, 2),
+        round(retrieval_ms + generation_ms, 2),
+        len(chunks),
+        cache_hit=cached_answer is not None,
     )
 
     yield {

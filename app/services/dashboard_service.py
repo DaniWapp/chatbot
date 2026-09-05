@@ -176,6 +176,7 @@ def _performance_section() -> dict:
         avg_retrieval_ms, avg_generation_ms, avg_total_ms, total_responses = conn.execute(
             "SELECT AVG(retrieval_ms), AVG(generation_ms), AVG(total_ms), COUNT(*) FROM chat_metrics"
         ).fetchone()
+        cache_hits = conn.execute("SELECT COUNT(*) FROM chat_metrics WHERE cache_hit = 1").fetchone()[0]
 
         groq_calls_total = conn.execute("SELECT COUNT(*) FROM groq_calls").fetchone()[0]
         groq_calls_failed = conn.execute("SELECT COUNT(*) FROM groq_calls WHERE success = 0").fetchone()[0]
@@ -194,6 +195,8 @@ def _performance_section() -> dict:
         "avg_generation_ms": round(avg_generation_ms, 1) if avg_generation_ms is not None else None,
         "avg_total_ms": round(avg_total_ms, 1) if avg_total_ms is not None else None,
         "total_responses": total_responses,
+        "cache_hits": cache_hits,
+        "cache_hit_rate": round(cache_hits / total_responses * 100, 1) if total_responses else None,
         "groq_calls_total": groq_calls_total,
         "groq_calls_failed": groq_calls_failed,
         "groq_calls_last_7_days": groq_calls_last_7_days,

@@ -213,6 +213,27 @@ def _get_connection() -> sqlite3.Connection:
         )
         _connection.execute("CREATE INDEX IF NOT EXISTS idx_groq_calls_created ON groq_calls(created_at)")
 
+        _ensure_column(_connection, "chat_metrics", "cache_hit", "INTEGER NOT NULL DEFAULT 0")
+
+        # Caché de respuestas por huella del contexto recuperado (no por
+        # pregunta) -- ver app/services/answer_cache_service.py. Dos
+        # preguntas con redacción distinta que recuperan los mismos
+        # fragmentos comparten context_hash y reutilizan la misma
+        # respuesta; si el texto de origen cambia (se edita un documento),
+        # el hash cambia y la entrada vieja simplemente deja de coincidir.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS answer_cache (
+                context_hash TEXT PRIMARY KEY,
+                question_example TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                last_used_at TEXT NOT NULL
+            )
+            """
+        )
+
         _connection.commit()
     return _connection
 
@@ -415,16 +436,66 @@ def add_admin_message(session_id: str, sender: str, message: str, message_type: 
 
 
 def record_chat_metrics(
-    session_id: str, retrieval_ms: float, generation_ms: float, total_ms: float, chunks_retrieved: int
+    session_id: str,
+    retrieval_ms: float,
+    generation_ms: float,
+    total_ms: float,
+    chunks_retrieved: int,
+    cache_hit: bool = False,
 ) -> None:
     """Registra las métricas de una respuesta generada por el bot, para el
-    dashboard de actividad (ver app/services/dashboard_service.py)."""
+    dashboard de actividad (ver app/services/dashboard_service.py).
+    cache_hit=True indica que se sirvió desde answer_cache sin llamar a
+    Groq (ver app/services/answer_cache_service.py)."""
     with _lock:
         conn = _get_connection()
         conn.execute(
-            "INSERT INTO chat_metrics (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, _now()),
+            "INSERT INTO chat_metrics (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, cache_hit, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, 1 if cache_hit else 0, _now()),
+        )
+        conn.commit()
+
+
+def get_cached_answer(context_hash: str) -> Optional[dict]:
+    """Busca una respuesta ya guardada para esta huella de contexto. Ver
+    app/services/answer_cache_service.py para cómo se calcula el hash."""
+    with _lock:
+        conn = _get_connection()
+        row = conn.execute(
+            "SELECT answer FROM answer_cache WHERE context_hash = ?", (context_hash,)
+        ).fetchone()
+    return {"answer": row[0]} if row else None
+
+
+def store_cached_answer(context_hash: str, question_example: str, answer: str) -> None:
+    """Guarda una respuesta nueva en la caché. Si ya existe una entrada con
+    ese mismo context_hash (carrera entre dos preguntas concurrentes con el
+    mismo contexto), se deja la que ya estaba -- ambas son igual de
+    válidas, no vale la pena sobreescribir."""
+    now = _now()
+    with _lock:
+        conn = _get_connection()
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO answer_cache
+                (context_hash, question_example, answer, hit_count, created_at, last_used_at)
+            VALUES (?, ?, ?, 0, ?, ?)
+            """,
+            (context_hash, question_example, answer, now, now),
+        )
+        conn.commit()
+
+
+def touch_cached_answer(context_hash: str) -> None:
+    """Marca un uso de una entrada de caché ya existente (hit_count,
+    last_used_at) -- para poder ver en el dashboard cuáles respuestas se
+    reutilizan más."""
+    with _lock:
+        conn = _get_connection()
+        conn.execute(
+            "UPDATE answer_cache SET hit_count = hit_count + 1, last_used_at = ? WHERE context_hash = ?",
+            (_now(), context_hash),
         )
         conn.commit()
 

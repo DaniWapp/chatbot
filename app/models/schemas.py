@@ -292,6 +292,8 @@ class DashboardPerformanceStats(BaseModel):
     avg_generation_ms: Optional[float] = None
     avg_total_ms: Optional[float] = None
     total_responses: int
+    cache_hits: int
+    cache_hit_rate: Optional[float] = None
     groq_calls_total: int
     groq_calls_failed: int
     groq_calls_last_7_days: int
