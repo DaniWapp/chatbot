@@ -6,6 +6,10 @@ académico, matrículas, requisitos de grado y demás procesos de la Facultad
 de Ingeniería, basándose **exclusivamente** en documentos oficiales cargados
 por el administrador.
 
+> Este README cubre la visión general. Para manual de usuario, decisiones
+> de diseño, flujos internos detallados o una guía para exponer el
+> proyecto, ver el [índice de documentación](docs/README.md).
+
 ## 1. Qué es el proyecto
 
 Un asistente web que estudiantes pueden usar para preguntar, en lenguaje
@@ -84,7 +88,9 @@ precompilados para Windows** y requiere Microsoft Visual C++ Build Tools
 para compilarse desde código fuente — una instalación pesada y compleja para
 un proyecto académico. FAISS (`faiss-cpu`) sí distribuye wheels
 precompilados para Windows/Python 3.13, por lo que `pip install` funciona
-sin instalar herramientas adicionales.
+sin instalar herramientas adicionales. Ver
+[conceptos-chunks-y-faiss.md](docs/conceptos-chunks-y-faiss.md) para el
+detalle de cómo FAISS busca por similitud y dónde se guarda cada cosa.
 
 ### Por qué `openai/gpt-oss-20b` como modelo de Groq
 
@@ -119,6 +125,9 @@ típica de empresas de hardware/infraestructura:
 - Estas condiciones pueden cambiar con el tiempo; verifica los límites
   vigentes en https://console.groq.com/docs/rate-limits antes de asumir que
   se mantendrán igual.
+
+Ver [decision-uso-de-groq.md](docs/decision-uso-de-groq.md) para el
+análisis completo (incluyendo alternativas consideradas y riesgos).
 
 ### Autolímite de peticiones a Groq (para no exceder el plan gratuito)
 
@@ -311,7 +320,9 @@ embeddings).
 
 **Desde el panel root** (recomendado): pestaña "Documentos" → subir
 archivo, opcionalmente etiquetarlo con una dependencia. Se reingesta
-automáticamente (solo ese archivo, ver 7.5).
+automáticamente (solo ese archivo, ver 7.5). Ver
+[flujo-subida-documentos.md](docs/flujo-subida-documentos.md) para el
+detalle paso a paso de qué pasa internamente con cada formato.
 
 **Manualmente por CLI**:
 1. Copia el archivo (PDF, DOCX, TXT o XLSX) dentro de `documents/`.
@@ -382,6 +393,11 @@ El resultado detallado se guarda en `evaluation/last_report.json` y es útil
 para mostrar en la sustentación que el proceso RAG realmente funciona.
 
 ## 11. Estructura del proyecto
+
+Ver [estructura-del-proyecto.md](docs/estructura-del-proyecto.md) para el
+árbol completo con explicación de cada archivo, y
+[stack-tecnologico.md](docs/stack-tecnologico.md) para el detalle de cada
+tecnología usada.
 
 ```
 chatbot/

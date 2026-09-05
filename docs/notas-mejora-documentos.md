@@ -106,9 +106,12 @@ solo se conservan los `.txt`. Implementado en
   temporal y se devuelve un error 400 -- no queda nada a medias.
 - La fuente citada al estudiante pasa a mostrar el nombre `.txt` (matiz 4
   resuelto: se prefirió simplicidad sobre preservar el nombre original).
-- Caso borde no resuelto (poco probable, no bloqueante): si se suben
-  `Reporte.pdf` y `Reporte.docx` por separado, ambos generarían
-  `Reporte.txt` y el segundo reemplazaría al primero.
+- **Actualización posterior:** el caso borde de arriba (dos archivos con
+  el mismo nombre base convergiendo al mismo `.txt`) sí se resolvió
+  después: `_upload_document` ahora usa `_next_available_txt_name` para
+  agregar un consecutivo automático (`"Reporte.txt"` → `"Reporte (2).txt"`)
+  en vez de sobreescribir, y avisa al administrador con qué nombre quedó
+  guardado el archivo.
 
 Probado en vivo con un DOCX real (extremo a extremo: subida -> conversión
 -> el .docx no queda en el servidor -> el chatbot responde citando el

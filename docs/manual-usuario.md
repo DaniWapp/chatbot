@@ -120,10 +120,27 @@ tengas.
   más (responde con botones Sí/No desde su chat).
 - **"Marcar como resuelto"**: cierra la atención humana; el chatbot vuelve
   a responder automáticamente al estudiante. Si tu respuesta fue útil, el
-  sistema puede proponerle al root (ver sección 4.5) agregarla como
+  sistema puede proponerle al root (ver sección 4.6) agregarla como
   pregunta frecuente.
 
-### 2.6 Documentos (botón "Documentos" en el encabezado)
+### 2.6 Dashboard (pestaña "Dashboard")
+
+Todo administrador (dependencia o general) tiene una pestaña **Dashboard**
+junto a "Conversaciones" con un resumen de la actividad reciente:
+
+- **Tarjetas de números**: conversaciones escaladas, resueltas, pendientes
+  ahora, escaladas en los últimos 7 días, tiempo promedio de primera
+  respuesta y de resolución, documentos indexados y su tamaño total, y
+  preguntas frecuentes pendientes/aceptadas.
+- **Gráfica de conversaciones escaladas por día** (últimos 30 días).
+- **Documentos recientes**: los últimos archivos subidos o modificados.
+- Si eres **administrador de dependencia**, todo lo anterior está
+  limitado a **tu propia dependencia**. Si eres **general**, ves los
+  números agregados de **todas** las dependencias, más una tabla
+  adicional de "Conversaciones por dependencia" con el desglose de cada
+  una.
+
+### 2.7 Documentos (pestaña "Documentos")
 
 Todo administrador (dependencia o general) puede subir y eliminar
 documentos directamente desde el panel, sin depender de root:
@@ -160,10 +177,13 @@ diferencias respecto a un administrador de dependencia normal:
   la redirige automáticamente hacia el general (y notifica al estudiante
   que su solicitud se sigue gestionando) — es un respaldo automático, no
   requiere ninguna acción manual.
-- En el botón **"Documentos"** (ver 2.6), el general tiene exactamente las
-  mismas capacidades que root: ve todos los documentos de todas las
+- En la pestaña **"Documentos"** (ver 2.7), el general tiene exactamente
+  las mismas capacidades que root: ve todos los documentos de todas las
   dependencias, puede subir eligiendo cualquier dependencia (o dejarlo
   general/compartido), recategorizar y eliminar cualquiera.
+- En la pestaña **"Dashboard"** (ver 2.6), el general ve los números
+  agregados de todas las dependencias, con el desglose adicional por
+  dependencia que un administrador de dependencia no ve.
 
 ---
 
@@ -174,7 +194,29 @@ primera vez desde el servidor con `scripts/create_root.py`; el resto de
 administradores los crea el propio root desde este panel). El root **no**
 atiende conversaciones — administra el sistema.
 
-### 4.1 Pestaña "Institución"
+### 4.1 Pestaña "Dashboard"
+
+Es la primera pestaña, la que se abre al iniciar sesión. Resume lo más
+importante que ha sucedido en todo el sistema:
+
+- **Tarjetas de números**: conversaciones escaladas, resueltas, pendientes
+  ahora, escaladas en los últimos 7 días, tiempos promedio de primera
+  respuesta y de resolución, documentos indexados y su tamaño total,
+  preguntas frecuentes pendientes/aceptadas, dependencias activas y
+  administradores activos, tiempo de respuesta del bot y uso de Groq
+  (llamadas totales, últimos 7 días y fallidas).
+- **Dos gráficas** (últimos 30 días): conversaciones escaladas por día, y
+  llamadas a Groq por día.
+- **Tabla "Conversaciones por dependencia"**: cuántas conversaciones ha
+  recibido cada dependencia.
+- **Tabla "Documentos recientes"**: los últimos archivos subidos o
+  modificados.
+
+Root es el único rol que ve las secciones de equipo de administración y
+de rendimiento/Groq -- general y dependencia (ver 2.6) solo ven las
+secciones de conversaciones, documentos y FAQ.
+
+### 4.2 Pestaña "Institución"
 
 - Cambia el **nombre de la institución** (aparece en el chat y en el
   encabezado de los paneles) y una **información adicional** opcional.
@@ -182,7 +224,7 @@ atiende conversaciones — administra el sistema.
   que ven los estudiantes y administradores.
 - Presiona **"Guardar cambios"**.
 
-### 4.2 Pestaña "Dependencias"
+### 4.3 Pestaña "Dependencias"
 
 - **"+ Nueva dependencia"**: crea un departamento/facultad/oficina con
   **nombre** y **descripción**.
@@ -192,7 +234,7 @@ atiende conversaciones — administra el sistema.
 - Puedes editar o eliminar una dependencia existente desde la tabla (no se
   puede eliminar una que todavía tenga un administrador asignado).
 
-### 4.3 Pestaña "Administradores"
+### 4.4 Pestaña "Administradores"
 
 - **"+ Nuevo administrador"**: crea una cuenta con:
   - **Usuario**: debe ser un correo electrónico (ej. `nombre@institucion.com`).
@@ -204,7 +246,7 @@ atiende conversaciones — administra el sistema.
   **Contraseña**, o **Desactivar/Activar** la cuenta (una cuenta inactiva
   no puede iniciar sesión, pero no se borra su historial).
 
-### 4.4 Pestaña "Documentos"
+### 4.5 Pestaña "Documentos"
 
 - **"+ Subir documento"**: sube un archivo (PDF, TXT, DOCX o XLSX) y,
   opcionalmente, **etiquétalo con una dependencia** (o déjalo como
@@ -216,7 +258,7 @@ atiende conversaciones — administra el sistema.
 - Puedes **recategorizar** (cambiar la dependencia de un documento ya
   subido) o **eliminarlo** desde la tabla.
 
-### 4.5 Pestaña "Preguntas frecuentes" (sugeridas automáticamente)
+### 4.6 Pestaña "Preguntas frecuentes" (sugeridas automáticamente)
 
 Cuando un asesor resuelve una conversación que sí respondió, el sistema
 reescribe esa pregunta y respuesta en formato profesional de FAQ y la deja
