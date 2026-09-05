@@ -1,10 +1,19 @@
-# Chatbot Facultad de Ingeniería — Asistente RAG
+# Asistente Institucional RAG — chatbot multi-dependencia
 
-Proyecto académico para la asignatura de Inteligencia Artificial: un chatbot
-conversacional que responde preguntas sobre reglamentos, calendario
-académico, matrículas, requisitos de grado y demás procesos de la Facultad
-de Ingeniería, basándose **exclusivamente** en documentos oficiales cargados
-por el administrador.
+Proyecto académico para la asignatura de Inteligencia Artificial: una
+plataforma de chatbot conversacional para una **institución completa**, no
+un área aislada. Cada institución registra sus propias **dependencias**
+(facultades, oficinas, departamentos) y alimenta cada una con su propia
+documentación oficial; el chatbot responde preguntas basándose
+**exclusivamente** en esos documentos, y redirige a un asesor humano de la
+dependencia correspondiente cuando no tiene información suficiente. Ver la
+sección 7 para el sistema de dependencias y roles.
+
+Este repositorio incluye, como ejemplo real de una instalación, la
+configuración de la Universidad Libre - Seccional Cúcuta (Facultad de
+Ingeniería) -- pero el software no está atado a ese caso: el nombre de la
+institución, el logo y las dependencias se configuran desde el panel de
+administración, sin tocar código.
 
 > Este README cubre la visión general. Para manual de usuario, decisiones
 > de diseño, flujos internos detallados o una guía para exponer el
@@ -12,19 +21,23 @@ por el administrador.
 
 ## 1. Qué es el proyecto
 
-Un asistente web que estudiantes pueden usar para preguntar, en lenguaje
-natural, cosas como "¿cuáles son los requisitos para graduarme?" o "¿puedo
-cancelar una asignatura?", y recibir una respuesta fundamentada en los
-documentos reales de la facultad, con las fuentes citadas (documento y
-página).
+Una plataforma web de asistente institucional que cualquier organización
+puede desplegar con su propio nombre, logo y estructura de dependencias.
+Los usuarios finales (por ejemplo, estudiantes en el despliegue de ejemplo
+de este repositorio) preguntan en lenguaje natural cosas como "¿cuáles son
+los requisitos para graduarme?" y reciben una respuesta fundamentada en
+los documentos reales de la dependencia correspondiente, con las fuentes
+citadas (documento y página).
 
 ## 2. Qué problema resuelve
 
-Los estudiantes normalmente deben leer reglamentos extensos o preguntar
-directamente en las oficinas administrativas para resolver dudas sencillas.
-Este chatbot centraliza esa información y permite consultarla de forma
-conversacional, sin inventar respuestas cuando la información no está
-disponible.
+Los usuarios de una institución normalmente deben leer reglamentos
+extensos o preguntar directamente en cada oficina administrativa para
+resolver dudas sencillas -- y no siempre saben a cuál dirigirse. Este
+chatbot centraliza esa información por dependencia y permite consultarla
+de forma conversacional, redirigiendo automáticamente al área correcta
+cuando hace falta un humano, sin inventar respuestas cuando la información
+no está disponible.
 
 ## 3. Qué es RAG (Retrieval-Augmented Generation)
 
@@ -202,7 +215,7 @@ GROQ_API_KEY=tu_clave_aqui
 Coloca tus archivos PDF, DOCX, TXT o XLSX dentro de la carpeta `documents/`. El
 proyecto ya incluye 3 documentos de **ejemplo** (marcados como
 `_EJEMPLO`) para poder probar el sistema de inmediato; reemplázalos o
-complétalos con los documentos oficiales reales de la facultad.
+complétalos con los documentos oficiales reales de tu institución.
 
 ### 6.6. Construir el índice (ingestión)
 

@@ -14,7 +14,7 @@ from app.services import history
 
 VALID_ROLES = {"root", "general", "dependencia"}
 DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60  # 7 días
-DEFAULT_INSTITUTION_NAME = "Facultad de Ingeniería"
+DEFAULT_INSTITUTION_NAME = "Mi Institución"
 
 
 def _now() -> str:

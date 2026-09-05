@@ -8,11 +8,11 @@ ver el [README.md](../README.md) (sección 5) y
 
 ## 1. Arquitectura en una frase
 
-Un chatbot RAG (Retrieval-Augmented Generation): antes de responder, busca
-los fragmentos más relevantes en los documentos oficiales de la facultad
-mediante búsqueda semántica local, y solo entonces le pide al modelo de
-lenguaje que responda basado exclusivamente en ese contexto — así evita
-inventar información.
+Un chatbot RAG (Retrieval-Augmented Generation) multi-dependencia: antes
+de responder, busca los fragmentos más relevantes en los documentos
+oficiales de la dependencia correspondiente mediante búsqueda semántica
+local, y solo entonces le pide al modelo de lenguaje que responda basado
+exclusivamente en ese contexto — así evita inventar información.
 
 ## 2. Backend
 

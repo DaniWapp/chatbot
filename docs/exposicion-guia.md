@@ -8,11 +8,18 @@ algo puntual.
 
 ## 1. El proyecto en una frase
 
-> Un chatbot que responde preguntas de estudiantes usando **únicamente**
-> los documentos oficiales de la facultad (reglamentos, calendario,
-> requisitos), y que redirige a un asesor humano cuando no tiene
-> suficiente información -- con un panel de administración completo por
-> roles para gestionar documentos, conversaciones y equipo.
+> Una plataforma de chatbot institucional multi-dependencia: cualquier
+> organización registra sus áreas (facultades, oficinas, departamentos) y
+> las alimenta con su propia documentación; el chatbot responde
+> **únicamente** con esa documentación oficial y redirige a un asesor
+> humano de la dependencia correspondiente cuando no tiene suficiente
+> información -- con un panel de administración completo por roles para
+> gestionar documentos, conversaciones y equipo.
+>
+> Este repositorio incluye como ejemplo real la instalación de la
+> Universidad Libre - Seccional Cúcuta (Facultad de Ingeniería) -- úsala
+> como caso concreto en la demo, pero aclara que el sistema no está
+> limitado a una sola facultad.
 
 ## 2. Estructura sugerida (12-15 minutos)
 
@@ -30,7 +37,7 @@ algo puntual.
 Analogía útil: **es la diferencia entre un examen a libro cerrado y uno a
 libro abierto.** Un LLM "normal" responde solo con lo que aprendió durante
 su entrenamiento (libro cerrado) -- no sabe nada específico de tu
-facultad, y si le preguntas igual puede inventar una respuesta con
+institución, y si le preguntas igual puede inventar una respuesta con
 seguridad (alucinación). RAG (Retrieval-Augmented Generation) le da al
 modelo el material correcto justo antes de responder (libro abierto): en
 vez de confiar en lo que "recuerda", el sistema busca los fragmentos más
@@ -114,7 +121,7 @@ acertó la fuente correcta en X de Y preguntas de prueba".
 ## 7. Preguntas probables y respuestas preparadas
 
 **¿Por qué RAG y no simplemente afinar (fine-tuning) el modelo con los
-documentos de la facultad?**
+documentos de la institución?**
 Fine-tuning es costoso, hay que rehacerlo cada vez que un documento
 cambia, y no elimina las alucinaciones (el modelo sigue "recordando" en
 vez de consultar). RAG permite actualizar el conocimiento con solo subir

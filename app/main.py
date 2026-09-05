@@ -67,8 +67,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Chatbot Facultad de Ingeniería",
-    description="Asistente RAG sobre documentos oficiales de la facultad.",
+    title="Chatbot institucional",
+    description="Asistente RAG multi-dependencia sobre documentos oficiales de una institución.",
     version="1.0.0",
     lifespan=lifespan,
 )
