@@ -48,12 +48,16 @@ class Settings:
     # Modelo local (sentence-transformers CrossEncoder, sin llamadas a Groq)
     # que juzga relevancia real pregunta-fragmento, no solo similitud de
     # embeddings -- ver docs/ (caso "duración"/"nivel" encontrando algo del
-    # tema equivocado). RERANK_MIN_SCORE es un punto de partida, se calibra
-    # observando resultados reales.
+    # tema equivocado). reranker.py convierte el logit crudo del modelo a
+    # una confianza 0-1 (sigmoide) antes de compararlo con RERANK_MIN_SCORE
+    # -- calibrado con evaluation/evaluate.py: un fragmento correcto real
+    # dio 0.127 de confianza, uno incorrecto dio 0.002, así que 0.3 (leído
+    # como si fuera una probabilidad de un modelo bien calibrado) rechazaba
+    # incluso respuestas correctas.
     RERANK_ENABLED: bool = os.getenv("RERANK_ENABLED", "true").lower() == "true"
     RERANKER_MODEL: str = os.getenv("RERANKER_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
     RERANK_CANDIDATE_K: int = _get_int("RERANK_CANDIDATE_K", 10)
-    RERANK_MIN_SCORE: float = _get_float("RERANK_MIN_SCORE", 0.3)
+    RERANK_MIN_SCORE: float = _get_float("RERANK_MIN_SCORE", 0.05)
 
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)
