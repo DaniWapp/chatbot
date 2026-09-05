@@ -10,6 +10,7 @@ from app.config import settings
 from app.rag.rate_limiter import GroqRateLimiter
 from app.rag.retriever import RetrievedChunk
 from app.services import admin_service
+from app.services import history as history_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +30,26 @@ def _estimate_tokens(messages: List[dict], max_completion_tokens: int) -> int:
     return (prompt_chars // 4) + max_completion_tokens
 
 
-def _create_completion(**kwargs):
+def _create_completion(purpose: str, **kwargs):
     """Único punto de salida hacia la API de Groq en todo el módulo: todas
     las funciones de aquí abajo pasan por esta función para que el
     limitador de tasa las controle a todas por igual (el límite de Groq es
-    por cuenta, no por función que lo llame) -- ver app/rag/rate_limiter.py."""
+    por cuenta, no por función que lo llame) -- ver app/rag/rate_limiter.py.
+    También es el punto único donde se registra el uso histórico de Groq
+    (distinto del limitador, que solo vive en memoria) para el dashboard de
+    actividad -- ver app/services/dashboard_service.py. purpose identifica
+    qué función llamó (p. ej. "generate_answer"), para poder desglosar el
+    uso por tipo de llamada."""
     estimated_tokens = _estimate_tokens(kwargs.get("messages", []), kwargs.get("max_completion_tokens", 0))
     _rate_limiter.acquire(estimated_tokens)
     client = get_client()
-    return client.chat.completions.create(**kwargs)
+    try:
+        result = client.chat.completions.create(**kwargs)
+    except Exception:
+        history_service.record_groq_call(purpose, success=False)
+        raise
+    history_service.record_groq_call(purpose, success=True)
+    return result
 
 
 def _build_system_prompt() -> str:
@@ -142,6 +154,7 @@ _GENERATION_KWARGS = dict(
 def generate_answer(question: str, context: str, history: List[Tuple[str, str]]) -> str:
     messages = build_messages(question, context, history)
     completion = _create_completion(
+        "generate_answer",
         model=settings.GROQ_MODEL,
         messages=messages,
         **_GENERATION_KWARGS,
@@ -154,6 +167,7 @@ def stream_answer(
 ) -> Generator[str, None, None]:
     messages = build_messages(question, context, history)
     stream = _create_completion(
+        "stream_answer",
         model=settings.GROQ_MODEL,
         messages=messages,
         stream=True,
@@ -206,6 +220,7 @@ def classify_department(
 
     try:
         completion = _create_completion(
+            "classify_department",
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
@@ -257,6 +272,7 @@ def suggest_clarifying_questions(question: str, candidates: List[RetrievedChunk]
 
     try:
         completion = _create_completion(
+            "suggest_clarifying_questions",
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
@@ -302,6 +318,7 @@ def generate_faq_candidate(question: str, advisor_answers: List[str]) -> Optiona
 
     try:
         completion = _create_completion(
+            "generate_faq_candidate",
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
@@ -354,6 +371,7 @@ def is_duplicate_faq(suggested_question: str, suggested_answer: str, similar_exi
 
     try:
         completion = _create_completion(
+            "is_duplicate_faq",
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,

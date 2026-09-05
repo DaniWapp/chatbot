@@ -179,6 +179,40 @@ def _get_connection() -> sqlite3.Connection:
         )
         _connection.execute("CREATE INDEX IF NOT EXISTS idx_faq_candidates_status ON faq_candidates(status)")
 
+        # Métricas de cada respuesta generada por el bot (para el dashboard
+        # de actividad -- ver app/services/dashboard_service.py). Se registra
+        # desde app/services/chat_service.py::_draft_response.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                retrieval_ms REAL NOT NULL,
+                generation_ms REAL NOT NULL,
+                total_ms REAL NOT NULL,
+                chunks_retrieved INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        _connection.execute("CREATE INDEX IF NOT EXISTS idx_chat_metrics_created ON chat_metrics(created_at)")
+
+        # Registro histórico de cada llamada a la API de Groq (distinto del
+        # limitador de tasa en app/rag/rate_limiter.py, que solo vive en
+        # memoria) -- se registra desde app/rag/llm.py::_create_completion,
+        # único punto de salida hacia Groq en todo el proyecto.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS groq_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                purpose TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        _connection.execute("CREATE INDEX IF NOT EXISTS idx_groq_calls_created ON groq_calls(created_at)")
+
         _connection.commit()
     return _connection
 
@@ -378,6 +412,34 @@ def add_admin_message(session_id: str, sender: str, message: str, message_type: 
             )
         conn.commit()
     return created_at
+
+
+def record_chat_metrics(
+    session_id: str, retrieval_ms: float, generation_ms: float, total_ms: float, chunks_retrieved: int
+) -> None:
+    """Registra las métricas de una respuesta generada por el bot, para el
+    dashboard de actividad (ver app/services/dashboard_service.py)."""
+    with _lock:
+        conn = _get_connection()
+        conn.execute(
+            "INSERT INTO chat_metrics (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, retrieval_ms, generation_ms, total_ms, chunks_retrieved, _now()),
+        )
+        conn.commit()
+
+
+def record_groq_call(purpose: str, success: bool) -> None:
+    """Registra una llamada a la API de Groq, para el dashboard de
+    actividad (uso histórico -- distinto del limitador de tasa en memoria
+    de app/rag/rate_limiter.py)."""
+    with _lock:
+        conn = _get_connection()
+        conn.execute(
+            "INSERT INTO groq_calls (purpose, success, created_at) VALUES (?, ?, ?)",
+            (purpose, 1 if success else 0, _now()),
+        )
+        conn.commit()
 
 
 _UNSCOPED = object()

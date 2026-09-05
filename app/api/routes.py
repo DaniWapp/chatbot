@@ -33,6 +33,7 @@ from app.models.schemas import (
     ChatRequest,
     ChatResponse,
     CheckinResponseRequest,
+    DashboardResponse,
     DependenciaCreateRequest,
     DependenciaResponse,
     DependenciaUpdateRequest,
@@ -59,6 +60,7 @@ from app.rag.document_loader import DocumentLoadError, load_document
 from app.rag.embeddings import embed_query
 from app.services import admin_service
 from app.services import chat_service
+from app.services import dashboard_service
 from app.services import faq_service
 from app.services import history as history_service
 from app.services import ingest_service
@@ -293,6 +295,23 @@ def change_password(payload: ChangePasswordRequest, identity: AdminIdentity = De
         raise HTTPException(status_code=401, detail="La contraseña actual no es correcta.")
     admin_service.set_admin_password(identity.id, payload.new_password)
     return {"status": "ok"}
+
+
+# --- Dashboard de actividad (root, general y dependencia) -----------------
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+def get_dashboard_route(identity: AdminIdentity = Depends(require_admin_session)) -> dict:
+    """Resumen de actividad del sistema, con alcance según el rol: root ve
+    todo (incluye equipo de administración y rendimiento/uso de Groq),
+    general ve conversaciones/documentos/FAQ agregados de todas las
+    dependencias, y un administrador de dependencia ve únicamente lo
+    suyo."""
+    if identity.role == "root":
+        return dashboard_service.get_dashboard(None, include_admin_and_performance=True)
+    if identity.role == "general":
+        return dashboard_service.get_dashboard(None, include_admin_and_performance=False)
+    return dashboard_service.get_dashboard(identity.dependencia_id, include_admin_and_performance=False)
 
 
 @router.get("/admin/sessions", response_model=SessionListResponse)

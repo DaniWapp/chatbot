@@ -108,7 +108,9 @@ def _suggest_clarifications(question: str) -> List[str]:
     return llm.suggest_clarifying_questions(question, weak_candidates)
 
 
-def _draft_response(question: str, conversation_history: List[Tuple[str, str]]) -> Tuple[ChatResponse, str]:
+def _draft_response(
+    session_id: str, question: str, conversation_history: List[Tuple[str, str]]
+) -> Tuple[ChatResponse, str]:
     """Núcleo compartido de recuperación + generación: arma el ChatResponse
     completo (fuentes, sugerencias si no hay información suficiente,
     métricas), sin decidir todavía si hay que revisar la escalación de la
@@ -129,6 +131,10 @@ def _draft_response(question: str, conversation_history: List[Tuple[str, str]]) 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
     hide_sources = is_no_info or _looks_too_short_for_citation(question)
     suggestions = _suggest_clarifications(question) if is_no_info else []
+
+    history_service.record_chat_metrics(
+        session_id, round(retrieval_ms, 2), round(generation_ms, 2), round(total_ms, 2), len(chunks)
+    )
 
     response = ChatResponse(
         answer=answer_text,
@@ -158,7 +164,7 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
         )
 
     conversation_history = history_service.get_history(session_id)
-    response, answer_text = _draft_response(question, conversation_history)
+    response, answer_text = _draft_response(session_id, question, conversation_history)
     _save_and_broadcast_turn(session_id, question, answer_text)
     return response
 
@@ -175,7 +181,7 @@ def draft_answer_for_admin(session_id: str, question: str) -> ChatResponse:
     estudiante: es una consulta de solo lectura que el asesor revisa antes
     de decidir usarla (copiándola a su campo de respuesta) o descartarla."""
     conversation_history = history_service.get_history(session_id)
-    response, _ = _draft_response(question, conversation_history)
+    response, _ = _draft_response(session_id, question, conversation_history)
     return response
 
 
@@ -212,6 +218,10 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
     suggestions = _suggest_clarifications(question) if is_no_info else []
+
+    history_service.record_chat_metrics(
+        session_id, round(retrieval_ms, 2), round(generation_ms, 2), round(retrieval_ms + generation_ms, 2), len(chunks)
+    )
 
     yield {
         "type": "done",
