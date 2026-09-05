@@ -60,6 +60,7 @@ function showAuthGate(message) {
 
 async function tryEnterApp() {
   try {
+    await loadDashboard();
     await loadInstitution();
     await loadDependencias();
     await loadAdmins();
@@ -504,6 +505,136 @@ changePasswordButtonEl.addEventListener("click", () => {
     }
   });
 });
+
+// --- Dashboard -----------------------------------------------------------
+
+let dashboardConversationsChart = null;
+let dashboardGroqChart = null;
+
+function formatMinutes(minutes) {
+  if (minutes == null) return "—";
+  if (minutes < 60) return `${minutes.toFixed(1)} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+
+function dashboardCardHtml(label, value) {
+  return `
+    <div class="dashboard-card">
+      <span class="dashboard-card-value">${value}</span>
+      <span class="dashboard-card-label">${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
+function dashboardCardsHtml(dashboard) {
+  const c = dashboard.conversations;
+  const d = dashboard.documents;
+  const f = dashboard.faq;
+  const cards = [
+    ["Conversaciones escaladas", c.total_escalated],
+    ["Resueltas", c.resolved],
+    ["Pendientes ahora", c.pending_now],
+    ["Escaladas en los últimos 7 días", c.last_7_days],
+    ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
+    ["Resolución (promedio)", formatMinutes(c.avg_resolution_minutes)],
+    ["Documentos indexados", d.total],
+    ["Tamaño total de documentos", formatSize(d.total_size_bytes)],
+    ["FAQ pendientes por revisar", f.pending],
+    ["FAQ aceptadas", f.accepted],
+  ];
+
+  if (dashboard.admin_team) {
+    cards.push(["Dependencias activas", dashboard.admin_team.dependencias_count]);
+    cards.push(["Administradores activos", dashboard.admin_team.admins_active]);
+  }
+  if (dashboard.performance) {
+    cards.push([
+      "Tiempo de respuesta del bot (promedio)",
+      dashboard.performance.avg_total_ms != null ? `${dashboard.performance.avg_total_ms} ms` : "—",
+    ]);
+    cards.push(["Llamadas a Groq (total)", dashboard.performance.groq_calls_total]);
+    cards.push(["Llamadas a Groq (últimos 7 días)", dashboard.performance.groq_calls_last_7_days]);
+    cards.push(["Llamadas a Groq fallidas", dashboard.performance.groq_calls_failed]);
+  }
+
+  return cards.map(([label, value]) => dashboardCardHtml(label, value)).join("");
+}
+
+function trendChartConfig(trend, label, color) {
+  return {
+    type: "line",
+    data: {
+      labels: trend.map((point) => point.date),
+      datasets: [
+        {
+          label,
+          data: trend.map((point) => point.count),
+          borderColor: color,
+          backgroundColor: `${color}26`,
+          tension: 0.25,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  };
+}
+
+function renderDashboardCharts(dashboard) {
+  const conversationsCanvas = document.getElementById("dashboard-conversations-chart");
+  const groqCanvas = document.getElementById("dashboard-groq-chart");
+
+  if (dashboardConversationsChart) dashboardConversationsChart.destroy();
+  dashboardConversationsChart = new Chart(
+    conversationsCanvas,
+    trendChartConfig(dashboard.conversations.daily_trend || [], "Conversaciones", "#2563eb")
+  );
+
+  if (dashboardGroqChart) dashboardGroqChart.destroy();
+  dashboardGroqChart = new Chart(
+    groqCanvas,
+    trendChartConfig(dashboard.performance ? dashboard.performance.groq_calls_daily_trend || [] : [], "Llamadas a Groq", "#16a34a")
+  );
+}
+
+function renderDashboardByDependenciaTable(dashboard) {
+  const tbody = document.getElementById("dashboard-by-dependencia-body");
+  const emptyEl = document.getElementById("dashboard-by-dependencia-empty");
+  const rows = dashboard.conversations.by_dependencia || [];
+  tbody.innerHTML = "";
+  emptyEl.hidden = rows.length > 0;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.name)}</td><td>${row.total}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderDashboardRecentDocumentsTable(dashboard) {
+  const tbody = document.getElementById("dashboard-recent-documents-body");
+  const emptyEl = document.getElementById("dashboard-recent-documents-empty");
+  const rows = dashboard.documents.recent || [];
+  tbody.innerHTML = "";
+  emptyEl.hidden = rows.length > 0;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.filename)}</td><td>${formatTime(row.modified_at)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadDashboard() {
+  const res = await rootFetch("/api/dashboard");
+  const dashboard = await res.json();
+  document.getElementById("dashboard-cards").innerHTML = dashboardCardsHtml(dashboard);
+  renderDashboardCharts(dashboard);
+  renderDashboardByDependenciaTable(dashboard);
+  renderDashboardRecentDocumentsTable(dashboard);
+}
 
 // --- Institución -------------------------------------------------------
 
