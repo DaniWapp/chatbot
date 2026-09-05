@@ -82,6 +82,28 @@
             </table>
             <p id="dashboard-recent-documents-empty" class="empty-hint" hidden>Todavía no hay documentos indexados.</p>
           </div>
+          <div class="dashboard-table-card">
+            <h3>Preguntas sin respuesta suficiente</h3>
+            <p class="panel-section-hint" style="margin: 0 0 10px;">
+              Lo que le falta a los documentos -- prioriza qué subir o completar.
+            </p>
+            <table class="data-table">
+              <thead><tr><th>Pregunta</th><th>Veces</th><th>Última vez</th></tr></thead>
+              <tbody id="dashboard-unanswered-questions-body"></tbody>
+            </table>
+            <p id="dashboard-unanswered-questions-empty" class="empty-hint" hidden>No hay preguntas sin responder registradas.</p>
+          </div>
+          <div class="dashboard-table-card">
+            <h3>Preguntas peor calificadas (👎)</h3>
+            <p class="panel-section-hint" style="margin: 0 0 10px;">
+              Respuestas que sí encontraron información, pero los estudiantes marcaron como no útil.
+            </p>
+            <table class="data-table">
+              <thead><tr><th>Pregunta</th><th>👎</th></tr></thead>
+              <tbody id="dashboard-most-disliked-body"></tbody>
+            </table>
+            <p id="dashboard-most-disliked-empty" class="empty-hint" hidden>Todavía no hay respuestas calificadas como no útiles.</p>
+          </div>
         </div>
       </section>
 
@@ -205,6 +227,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="/static/root.js?v=10"></script>
+  <script src="/static/root.js?v=12"></script>
 </body>
 </html>

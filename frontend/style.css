@@ -93,20 +93,29 @@ body {
 }
 
 .mark-solved-button {
-  background: rgba(255, 255, 255, 0.92);
-  border: none;
-  color: var(--accent-dark);
+  display: block;
+  width: fit-content;
+  margin: 10px auto 10px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 11.5px;
-  font-weight: 600;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.mark-solved-button[hidden] {
+  display: none;
 }
 
 .mark-solved-button:hover {
-  background: #ffffff;
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent-dark);
 }
 
 .mark-solved-button:disabled {
@@ -212,11 +221,68 @@ body {
 }
 
 .message-row.assistant .bubble {
+  position: relative;
+  padding-right: 40px;
+  padding-bottom: 40px;
   background: var(--assistant-bubble);
   color: var(--text);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   overflow-x: auto;
+}
+
+.copy-button,
+.feedback-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.copy-button:hover,
+.feedback-button:hover {
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.copy-button.copied {
+  color: #16a34a;
+}
+
+.copy-button svg,
+.feedback-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.feedback-buttons {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+}
+
+.feedback-up.voted {
+  color: var(--accent);
+}
+
+.feedback-down.voted {
+  color: var(--text-faint);
 }
 
 /* --- Contenido markdown renderizado (respuesta del bot / mensaje del asesor) --- */
@@ -413,6 +479,10 @@ body {
 }
 
 .suggestion-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   background: none;
   border: 1px solid var(--accent);
   color: var(--accent-dark);
@@ -428,12 +498,32 @@ body {
   background: var(--accent-soft);
 }
 
+.suggestion-button-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.escalate-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px;
+  margin-top: 10px;
+  max-width: 280px;
+}
+
+.escalate-form-intro {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 .escalate-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 6px;
-  max-width: 260px;
 }
 
 .escalate-form input {
@@ -580,6 +670,18 @@ body {
   padding-left: 16px;
 }
 
+.typing-indicator-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 0;
+}
+
+.typing-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .typing-indicator {
   display: inline-flex;
   gap: 4px;
@@ -636,16 +738,24 @@ body {
 }
 
 #send-button {
-  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: none;
-  border-radius: var(--radius);
+  border-radius: 50%;
   background: var(--accent-dark);
   color: white;
-  font-size: 13.5px;
-  font-weight: 500;
   cursor: pointer;
   transition: background 0.12s ease;
   flex-shrink: 0;
+}
+
+#send-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 #send-button:hover {

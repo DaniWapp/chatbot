@@ -562,6 +562,13 @@ function dashboardCardsHtml(dashboard) {
     cards.push(["Llamadas a Groq (últimos 7 días)", dashboard.performance.groq_calls_last_7_days]);
     cards.push(["Llamadas a Groq fallidas", dashboard.performance.groq_calls_failed]);
   }
+  if (dashboard.feedback) {
+    cards.push(["Respuestas útiles (👍)", dashboard.feedback.up]);
+    cards.push([
+      "Respuestas no útiles (👎)",
+      dashboard.feedback.down_rate != null ? `${dashboard.feedback.down}  (${dashboard.feedback.down_rate}%)` : dashboard.feedback.down,
+    ]);
+  }
 
   return cards.map(([label, value]) => dashboardCardHtml(label, value)).join("");
 }
@@ -633,6 +640,32 @@ function renderDashboardRecentDocumentsTable(dashboard) {
   }
 }
 
+function renderDashboardUnansweredQuestionsTable(dashboard) {
+  const tbody = document.getElementById("dashboard-unanswered-questions-body");
+  const emptyEl = document.getElementById("dashboard-unanswered-questions-empty");
+  const rows = (dashboard.unanswered_questions && dashboard.unanswered_questions.top) || [];
+  tbody.innerHTML = "";
+  emptyEl.hidden = rows.length > 0;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.question)}</td><td>${row.count}</td><td>${formatTime(row.last_asked)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderDashboardMostDislikedTable(dashboard) {
+  const tbody = document.getElementById("dashboard-most-disliked-body");
+  const emptyEl = document.getElementById("dashboard-most-disliked-empty");
+  const rows = (dashboard.feedback && dashboard.feedback.most_disliked) || [];
+  tbody.innerHTML = "";
+  emptyEl.hidden = rows.length > 0;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.question)}</td><td>${row.count}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 async function loadDashboard() {
   const res = await rootFetch("/api/dashboard");
   const dashboard = await res.json();
@@ -640,6 +673,8 @@ async function loadDashboard() {
   renderDashboardCharts(dashboard);
   renderDashboardByDependenciaTable(dashboard);
   renderDashboardRecentDocumentsTable(dashboard);
+  renderDashboardUnansweredQuestionsTable(dashboard);
+  renderDashboardMostDislikedTable(dashboard);
 }
 
 // --- Institución -------------------------------------------------------

@@ -111,7 +111,10 @@ function addAssistantPlaceholder() {
   block.innerHTML = `
     <div class="message-row assistant">
       <div class="bubble">
-        <div class="typing-indicator"><span></span><span></span><span></span></div>
+        <div class="typing-indicator-row">
+          <div class="typing-indicator"><span></span><span></span><span></span></div>
+          <span class="typing-caption">Buscando en los documentos oficiales...</span>
+        </div>
       </div>
     </div>
   `;
@@ -120,7 +123,7 @@ function addAssistantPlaceholder() {
   return block;
 }
 
-function buildAssistantMessageEl(text) {
+function buildAssistantMessageEl(text, turnCreatedAt, initialRating) {
   const block = document.createElement("div");
   block.className = "message-block";
   block.innerHTML = `
@@ -128,13 +131,16 @@ function buildAssistantMessageEl(text) {
       <div class="bubble"></div>
     </div>
   `;
-  block.querySelector(".bubble").innerHTML = renderMarkdownHtml(text);
+  const bubble = block.querySelector(".bubble");
+  bubble.innerHTML = renderMarkdownHtml(text);
+  addCopyButton(bubble, text);
+  addFeedbackButtons(bubble, turnCreatedAt, initialRating);
   return block;
 }
 
-function addAssistantMessage(text) {
+function addAssistantMessage(text, turnCreatedAt, initialRating) {
   hideEmptyState();
-  chatWindow.appendChild(buildAssistantMessageEl(text));
+  chatWindow.appendChild(buildAssistantMessageEl(text, turnCreatedAt, initialRating));
   scrollToBottom();
 }
 
@@ -156,6 +162,137 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+const COPY_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
+  '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+const CHECK_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+// navigator.clipboard requiere un "contexto seguro" (HTTPS, o localhost) --
+// probando desde el celular por IP local (http://192.168.x.x) el navegador
+// no la expone en absoluto. Respaldo clásico con un textarea oculto +
+// document.execCommand("copy"), que sí funciona en ese caso.
+async function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // sigue al respaldo de abajo
+    }
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const success = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return success;
+  } catch {
+    return false;
+  }
+}
+
+// Se guarda el texto tal cual se generó (antes de renderMarkdownHtml), no
+// se lee de vuelta del DOM -- así se copia el texto real de la respuesta,
+// no el del propio botón u otros elementos que se agreguen a la burbuja.
+function addCopyButton(bubble, text) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy-button";
+  button.title = "Copiar respuesta";
+  button.setAttribute("aria-label", "Copiar respuesta");
+  button.innerHTML = COPY_ICON_SVG;
+  button.addEventListener("click", async () => {
+    const copied = await copyToClipboard(text);
+    if (!copied) return;
+    button.classList.add("copied");
+    button.innerHTML = CHECK_ICON_SVG;
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.innerHTML = COPY_ICON_SVG;
+    }, 1500);
+  });
+  bubble.appendChild(button);
+}
+
+const THUMBS_UP_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>';
+const THUMBS_DOWN_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>';
+const THUMBS_UP_FILLED_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor">' +
+  '<path d="M1 21h4V9H1v12zM23 10c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg>';
+const THUMBS_DOWN_FILLED_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor">' +
+  '<path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"></path></svg>';
+
+async function submitFeedback(turnCreatedAt, rating) {
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn_created_at: turnCreatedAt, rating }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// turnCreatedAt identifica la respuesta puntual a calificar (viene del
+// evento "done" del streaming para una respuesta nueva, o de created_at
+// del historial recargado) -- ver app/services/history.py::record_feedback.
+// Si es null/undefined (ej. no se pudo determinar), no se muestran los
+// botones -- no hay nada que calificar.
+function addFeedbackButtons(bubble, turnCreatedAt, initialRating) {
+  if (!turnCreatedAt) return;
+
+  const container = document.createElement("div");
+  container.className = "feedback-buttons";
+
+  const upButton = document.createElement("button");
+  upButton.type = "button";
+  upButton.className = "feedback-button feedback-up";
+  upButton.title = "Respuesta útil";
+  upButton.setAttribute("aria-label", "Respuesta útil");
+
+  const downButton = document.createElement("button");
+  downButton.type = "button";
+  downButton.className = "feedback-button feedback-down";
+  downButton.title = "Respuesta no útil";
+  downButton.setAttribute("aria-label", "Respuesta no útil");
+
+  if (initialRating === "up") upButton.classList.add("voted");
+  if (initialRating === "down") downButton.classList.add("voted");
+  upButton.innerHTML = upButton.classList.contains("voted") ? THUMBS_UP_FILLED_ICON_SVG : THUMBS_UP_ICON_SVG;
+  downButton.innerHTML = downButton.classList.contains("voted") ? THUMBS_DOWN_FILLED_ICON_SVG : THUMBS_DOWN_ICON_SVG;
+
+  const vote = async (rating, clickedButton, otherButton) => {
+    const ok = await submitFeedback(turnCreatedAt, rating);
+    if (!ok) return;
+    clickedButton.classList.add("voted");
+    otherButton.classList.remove("voted");
+    upButton.innerHTML = upButton.classList.contains("voted") ? THUMBS_UP_FILLED_ICON_SVG : THUMBS_UP_ICON_SVG;
+    downButton.innerHTML = downButton.classList.contains("voted") ? THUMBS_DOWN_FILLED_ICON_SVG : THUMBS_DOWN_ICON_SVG;
+  };
+
+  upButton.addEventListener("click", () => vote("up", upButton, downButton));
+  downButton.addEventListener("click", () => vote("down", downButton, upButton));
+
+  container.appendChild(downButton);
+  container.appendChild(upButton);
+  bubble.appendChild(container);
 }
 
 function addSystemNotice(text) {
@@ -192,7 +329,7 @@ function prependHistoryMessages(messages) {
   const fragment = document.createDocumentFragment();
   messages.forEach((m) => {
     if (m.sender === "student") fragment.appendChild(buildUserMessageEl(m.message));
-    else if (m.sender === "assistant") fragment.appendChild(buildAssistantMessageEl(m.message));
+    else if (m.sender === "assistant") fragment.appendChild(buildAssistantMessageEl(m.message, m.created_at, m.feedback_rating));
     else if (m.sender === "advisor") fragment.appendChild(buildAdvisorMessageEl(m.message));
   });
   chatWindow.insertBefore(fragment, chatWindow.firstChild);
@@ -320,11 +457,14 @@ async function submitEscalation(name, email, container, onError) {
 
 function showEscalationForm(container) {
   container.innerHTML = `
-    <form class="escalate-form">
-      <input type="text" class="escalate-name" placeholder="Nombre completo" required maxlength="200" />
-      <input type="email" class="escalate-email" placeholder="Correo electrónico" required maxlength="200" />
-      <button type="submit">Enviar</button>
-    </form>
+    <div class="escalate-card">
+      <p class="escalate-form-intro">Para conectarte con un asesor humano, cuéntanos quién eres:</p>
+      <form class="escalate-form">
+        <input type="text" class="escalate-name" placeholder="Nombre completo" required maxlength="200" />
+        <input type="email" class="escalate-email" placeholder="Correo electrónico" required maxlength="200" />
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
   `;
   const form = container.querySelector(".escalate-form");
   form.addEventListener("submit", (e) => {
@@ -358,7 +498,13 @@ function addSuggestionOptions(block, suggestions) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "suggestion-button";
-    button.textContent = text;
+    button.innerHTML = `
+      <span class="suggestion-button-text">${escapeHtml(text)}</span>
+      <svg class="suggestion-button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    `;
     button.addEventListener("click", () => {
       container.remove();
       sendMessage(text);
@@ -457,7 +603,7 @@ function renderHistoryMessage(m, isLast) {
   if (m.sender === "student") {
     addUserMessage(m.message);
   } else if (m.sender === "assistant") {
-    addAssistantMessage(m.message);
+    addAssistantMessage(m.message, m.created_at, m.feedback_rating);
   } else if (m.sender === "advisor" && m.message_type === "checkin") {
     if (isLast) addCheckinPrompt(m.message);
     else addAdvisorMessage(m.message);
@@ -534,12 +680,26 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// FastAPI devuelve "detail" como texto simple para errores propios (ej.
+// HTTPException), pero como una lista de objetos para errores de
+// validación automática de Pydantic (ej. mensaje demasiado largo) --
+// mostrar esa lista tal cual con textContent la convierte en
+// "[object Object]". Aquí se normaliza a un texto legible en ambos casos.
+function extractErrorMessage(err) {
+  if (typeof err.detail === "string" && err.detail.trim()) return err.detail;
+  if (Array.isArray(err.detail) && err.detail.length > 0) {
+    return "Tu mensaje no es válido. Verifica que no esté vacío ni sea demasiado largo.";
+  }
+  return "Ocurrió un error al contactar al asistente.";
+}
+
 async function sendMessage(text) {
   hideEmptyState();
   if (!isEscalated) markSolvedButton.hidden = false;
   addUserMessage(text);
   const block = addAssistantPlaceholder();
   const bubble = block.querySelector(".bubble");
+  const captionEl = block.querySelector(".typing-caption");
   const placeholderShownAt = performance.now();
 
   sendButton.disabled = true;
@@ -553,7 +713,7 @@ async function sendMessage(text) {
 
     if (!response.ok || !response.body) {
       const err = await response.json().catch(() => ({}));
-      bubble.textContent = err.detail || "Ocurrió un error al contactar al asistente.";
+      bubble.textContent = extractErrorMessage(err);
       sendButton.disabled = false;
       return;
     }
@@ -566,6 +726,7 @@ async function sendMessage(text) {
     let suggestions = [];
     let wasEscalated = false;
     let errorMessage = null;
+    let turnCreatedAt = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -593,12 +754,18 @@ async function sendMessage(text) {
         // una vez cumplido MIN_TYPING_INDICATOR_MS -- ver comentario arriba.
         if (event.type === "meta") {
           sources = event.sources || [];
+          if (captionEl) {
+            captionEl.textContent = event.has_sufficient_info
+              ? "Encontró información relevante, generando tu respuesta..."
+              : "No encontró coincidencias directas, buscando alternativas...";
+          }
         } else if (event.type === "delta") {
           answerText += event.text;
         } else if (event.type === "escalated") {
           wasEscalated = true;
         } else if (event.type === "done") {
           suggestions = event.suggestions || [];
+          turnCreatedAt = event.turn_created_at || null;
         } else if (event.type === "error") {
           errorMessage = event.message;
         }
@@ -624,6 +791,8 @@ async function sendMessage(text) {
       bubble.textContent = "Error: " + errorMessage;
     } else {
       bubble.innerHTML = renderMarkdownHtml(answerText);
+      addCopyButton(bubble, answerText);
+      addFeedbackButtons(bubble, turnCreatedAt);
       if (answerText.trim() === NO_INFO_TEXT) {
         bubble.classList.add("no-info");
         addSuggestionOptions(block, suggestions);

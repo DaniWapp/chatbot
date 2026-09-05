@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/style.css?v=23" />
+  <link rel="stylesheet" href="/static/style.css?v=37" />
 </head>
 <body>
   <div class="app">
@@ -20,7 +20,6 @@
         </div>
       </div>
       <div class="header-actions">
-        <button id="mark-solved-button" class="mark-solved-button" type="button">Marcar como solucionado</button>
         <span id="status-badge" class="status-badge offline" title="Estado del servidor">Conectando</span>
       </div>
     </header>
@@ -44,6 +43,8 @@
       <button id="banner-mark-solved-button" class="banner-mark-solved-button" type="button">Marcar como solucionado - Volver a modo bot</button>
     </div>
 
+    <button id="mark-solved-button" class="mark-solved-button" type="button" hidden>Marcar como solucionado</button>
+
     <form id="chat-form" class="chat-input-bar">
       <input
         id="message-input"
@@ -52,13 +53,18 @@
         autocomplete="off"
         maxlength="2000"
       />
-      <button id="send-button" type="submit">Enviar</button>
+      <button id="send-button" type="submit" title="Enviar" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
     </form>
   </div>
 
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/script.js?v=28"></script>
+  <script src="/static/script.js?v=37"></script>
 </body>
 </html>
