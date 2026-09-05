@@ -10,6 +10,7 @@ ningún estado propio."""
 import datetime
 from typing import List, Optional, Tuple
 
+from app.config import settings
 from app.services import admin_service
 from app.services import history as history_service
 from app.services import ingest_service
@@ -17,6 +18,7 @@ from app.services import ingest_service
 _TREND_DAYS = 30
 _RECENT_WINDOW_DAYS = 7
 _RECENT_DOCUMENTS_LIMIT = 5
+_UNANSWERED_QUESTIONS_LIMIT = 15
 
 
 def _cutoff(days: int) -> str:
@@ -204,10 +206,53 @@ def _performance_section() -> dict:
     }
 
 
+def _unanswered_questions_section() -> dict:
+    """Preguntas que dispararon la respuesta fija de "no encontré
+    información suficiente" -- la lista priorizada de qué le falta a los
+    documentos. No se puede filtrar por dependencia: turns no distingue
+    dependencia (solo session_meta la tiene, y solo para conversaciones
+    que llegaron a escalarse), así que esta sección es del sistema
+    completo, exclusiva de root -- igual que admin_team/performance."""
+    with history_service.db_lock():
+        conn = history_service.get_connection()
+        rows = conn.execute(
+            """
+            SELECT question, COUNT(*) AS veces, MAX(created_at) AS last_asked
+            FROM turns
+            WHERE answer LIKE ?
+            GROUP BY question
+            ORDER BY veces DESC, last_asked DESC
+            LIMIT ?
+            """,
+            (f"%{settings.NO_INFO_MESSAGE.strip()}%", _UNANSWERED_QUESTIONS_LIMIT),
+        ).fetchall()
+
+    return {
+        "top": [{"question": question, "count": count, "last_asked": last_asked} for question, count, last_asked in rows]
+    }
+
+
+def _feedback_section() -> dict:
+    """Totales 👍/👎 y las preguntas peor calificadas -- mide calidad real
+    de las respuestas sin revisar conversación por conversación. Mismo
+    alcance que unanswered_questions (todo el sistema, exclusivo de root):
+    answer_feedback se identifica por session_id+turn_created_at, sin
+    columna de dependencia."""
+    summary = history_service.get_feedback_summary(limit=_UNANSWERED_QUESTIONS_LIMIT)
+    total = summary["up"] + summary["down"]
+    return {
+        "up": summary["up"],
+        "down": summary["down"],
+        "down_rate": round(summary["down"] / total * 100, 1) if total else None,
+        "most_disliked": summary["most_disliked"],
+    }
+
+
 def get_dashboard(dependencia_id: Optional[int], include_admin_and_performance: bool) -> dict:
     """dependencia_id=None agrega todo el sistema (root y general);
     include_admin_and_performance=True agrega las secciones exclusivas de
-    root (equipo de administración y rendimiento/uso de Groq)."""
+    root (equipo de administración, rendimiento/uso de Groq, preguntas sin
+    respuesta suficiente, y feedback de respuestas)."""
     dashboard = {
         "conversations": _conversations_section(dependencia_id),
         "documents": _documents_section(dependencia_id),
@@ -216,4 +261,6 @@ def get_dashboard(dependencia_id: Optional[int], include_admin_and_performance: 
     if include_admin_and_performance:
         dashboard["admin_team"] = _admin_team_section()
         dashboard["performance"] = _performance_section()
+        dashboard["unanswered_questions"] = _unanswered_questions_section()
+        dashboard["feedback"] = _feedback_section()
     return dashboard

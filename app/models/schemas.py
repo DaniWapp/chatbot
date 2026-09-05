@@ -36,6 +36,10 @@ class ChatResponse(BaseModel):
     suggestions: List[str] = []
     metrics: ChatMetrics
     escalated: bool = False
+    # Identifica esta respuesta puntual para poder votarla (ver
+    # POST /api/sessions/{id}/feedback) -- None si nunca se guardó como
+    # turno real (ej. el borrador de "Preguntar al asistente" del asesor).
+    turn_created_at: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
@@ -81,6 +85,7 @@ class SessionMessage(BaseModel):
     message: str
     created_at: str
     message_type: str = "text"  # "text" | "checkin" | "checkin_response"
+    feedback_rating: Optional[str] = None  # "up" | "down" | None, solo para respuestas del asistente
 
 
 class SessionHistoryPage(BaseModel):
@@ -112,6 +117,11 @@ class AdminAskBotRequest(BaseModel):
 
 class CheckinResponseRequest(BaseModel):
     wants_more_help: bool
+
+
+class FeedbackRequest(BaseModel):
+    turn_created_at: str = Field(..., min_length=1)
+    rating: Literal["up", "down"]
 
 
 class SessionStatus(BaseModel):
@@ -300,6 +310,28 @@ class DashboardPerformanceStats(BaseModel):
     groq_calls_daily_trend: List[DailyCount] = []
 
 
+class UnansweredQuestion(BaseModel):
+    question: str
+    count: int
+    last_asked: str
+
+
+class DashboardUnansweredStats(BaseModel):
+    top: List[UnansweredQuestion] = []
+
+
+class DislikedQuestion(BaseModel):
+    question: str
+    count: int
+
+
+class DashboardFeedbackStats(BaseModel):
+    up: int
+    down: int
+    down_rate: Optional[float] = None
+    most_disliked: List[DislikedQuestion] = []
+
+
 class DashboardResponse(BaseModel):
     conversations: DashboardConversationsStats
     documents: DashboardDocumentsStats
@@ -307,3 +339,5 @@ class DashboardResponse(BaseModel):
     # Solo presentes para root.
     admin_team: Optional[DashboardAdminTeamStats] = None
     performance: Optional[DashboardPerformanceStats] = None
+    unanswered_questions: Optional[DashboardUnansweredStats] = None
+    feedback: Optional[DashboardFeedbackStats] = None

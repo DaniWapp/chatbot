@@ -43,6 +43,7 @@ from app.models.schemas import (
     EscalateRequest,
     FaqCandidateResponse,
     FaqCandidateUpdateRequest,
+    FeedbackRequest,
     HealthResponse,
     IngestResponse,
     InstitutionResponse,
@@ -157,6 +158,18 @@ def get_session_history(
         has_more=data["has_more"],
         next_cursor=data["next_cursor"],
     )
+
+
+@router.post("/sessions/{session_id}/feedback")
+def submit_feedback(session_id: str, payload: FeedbackRequest) -> dict:
+    """El estudiante califica una respuesta puntual del bot (👍/👎),
+    identificada por turn_created_at (ver ChatResponse.turn_created_at y el
+    evento "done" del streaming). No requiere token de admin -- mismo nivel
+    de confianza que /api/chat: basta con conocer el session_id, igual que
+    /escalate y /sessions/{id}/history. Votar de nuevo sobre la misma
+    respuesta reemplaza el voto anterior."""
+    history_service.record_feedback(session_id, payload.turn_created_at, payload.rating)
+    return {"status": "ok"}
 
 
 def _broadcast_session_event(session_id: str, event: dict) -> None:

@@ -234,6 +234,25 @@ def _get_connection() -> sqlite3.Connection:
             """
         )
 
+        # Feedback del estudiante (👍/👎) sobre una respuesta puntual del
+        # bot. turns no expone su id autoincremental al cliente, así que se
+        # identifica el turno por (session_id, turn_created_at) -- mismo
+        # patrón que ya usa el frontend (script.js::latestRenderedMessageAt)
+        # para referenciar un turno sin exponer ids internos. PRIMARY KEY
+        # compuesta + INSERT OR REPLACE en record_feedback: el estudiante
+        # puede cambiar de opinión sobre la misma respuesta.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS answer_feedback (
+                session_id TEXT NOT NULL,
+                turn_created_at TEXT NOT NULL,
+                rating TEXT NOT NULL CHECK (rating IN ('up', 'down')),
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, turn_created_at)
+            )
+            """
+        )
+
         _connection.commit()
     return _connection
 
@@ -498,6 +517,52 @@ def touch_cached_answer(context_hash: str) -> None:
             (_now(), context_hash),
         )
         conn.commit()
+
+
+def record_feedback(session_id: str, turn_created_at: str, rating: str) -> None:
+    """Guarda (o cambia) el voto del estudiante sobre una respuesta puntual
+    -- identificada por (session_id, turn_created_at), ver el comentario de
+    la tabla answer_feedback en _get_connection(). Si ya había votado esa
+    misma respuesta, se reemplaza (puede cambiar de 👍 a 👎 o viceversa)."""
+    with _lock:
+        conn = _get_connection()
+        conn.execute(
+            """
+            INSERT INTO answer_feedback (session_id, turn_created_at, rating, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(session_id, turn_created_at) DO UPDATE SET
+                rating = excluded.rating,
+                created_at = excluded.created_at
+            """,
+            (session_id, turn_created_at, rating, _now()),
+        )
+        conn.commit()
+
+
+def get_feedback_summary(limit: int = 15) -> dict:
+    """Totales 👍/👎 y las preguntas con más 👎 (uniendo con turns por
+    session_id+created_at) -- para el dashboard."""
+    with _lock:
+        conn = _get_connection()
+        up = conn.execute("SELECT COUNT(*) FROM answer_feedback WHERE rating = 'up'").fetchone()[0]
+        down = conn.execute("SELECT COUNT(*) FROM answer_feedback WHERE rating = 'down'").fetchone()[0]
+        worst_rows = conn.execute(
+            """
+            SELECT t.question, COUNT(*) AS veces
+            FROM answer_feedback f
+            JOIN turns t ON t.session_id = f.session_id AND t.created_at = f.turn_created_at
+            WHERE f.rating = 'down'
+            GROUP BY t.question
+            ORDER BY veces DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return {
+        "up": up,
+        "down": down,
+        "most_disliked": [{"question": question, "count": count} for question, count in worst_rows],
+    }
 
 
 def record_groq_call(purpose: str, success: bool) -> None:
@@ -768,11 +833,19 @@ def _get_full_history_all(session_id: str) -> List[dict]:
             "SELECT sender, message, created_at, message_type FROM admin_messages WHERE session_id = ? ORDER BY id ASC",
             (session_id,),
         ).fetchall()
+        feedback_rows = conn.execute(
+            "SELECT turn_created_at, rating FROM answer_feedback WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+    feedback_by_turn = dict(feedback_rows)
 
     messages: List[dict] = []
     for question, answer, created_at in turn_rows:
         messages.append({"sender": "student", "message": question, "created_at": created_at, "message_type": "text"})
-        messages.append({"sender": "assistant", "message": answer, "created_at": created_at, "message_type": "text"})
+        assistant_message = {"sender": "assistant", "message": answer, "created_at": created_at, "message_type": "text"}
+        if created_at in feedback_by_turn:
+            assistant_message["feedback_rating"] = feedback_by_turn[created_at]
+        messages.append(assistant_message)
     for sender, message, created_at, message_type in admin_rows:
         messages.append({"sender": sender, "message": message, "created_at": created_at, "message_type": message_type})
 
