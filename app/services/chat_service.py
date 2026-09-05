@@ -20,33 +20,23 @@ from app.services import history as history_service
 from app.services import ws_manager
 
 
-# Un hit de caché (ver answer_cache_service) resuelve la respuesta casi
-# instantáneo (unos pocos ms), lo cual se siente raro/artificial frente a
-# la generación real por streaming, que siempre toma al menos un segundo.
-# Estas pausas son puramente de UX -- no se miden como generation_ms (esa
-# métrica se calcula ANTES de aplicarlas, para que el dashboard siga
-# reflejando el tiempo de cómputo real, no la espera simulada).
-_CACHE_HIT_INITIAL_DELAY_SECONDS = 0.4
-_CACHE_HIT_WORD_DELAY_SECONDS = 0.02
-_CACHE_HIT_FLAT_DELAY_SECONDS = 1.0
-
-
-def _simulate_typing_deltas(text: str) -> Generator[str, None, None]:
-    """Trocea una respuesta cacheada en palabras para emitirlas una a una
-    (con una pequeña pausa entre cada una, ver _CACHE_HIT_WORD_DELAY_SECONDS
-    en el llamador) en vez de un solo bloque de texto completo -- así un
-    hit de caché se sigue sintiendo como el bot escribiendo en vivo."""
-    words = text.split(" ")
-    for i, word in enumerate(words):
-        yield word if i == len(words) - 1 else word + " "
-
-
 def _looks_too_short_for_citation(question: str) -> bool:
     """Mensajes de 1-2 palabras (ej. "gracias", "ok", "listo") no son
     preguntas reales sobre la facultad; si por casualidad su embedding
     coincide débilmente con algún fragmento (apenas sobre el umbral de
     similitud), no tiene sentido citarlo como fuente."""
     return len(question.strip().split()) < 3
+
+
+def _needs_query_rewrite(chunks: List[RetrievedChunk], conversation_history: List[Tuple[str, str]]) -> bool:
+    """La búsqueda semántica solo usa el mensaje actual, nunca el
+    historial -- un seguimiento corto como "precio" tras hablar de
+    "Ingeniería en TIC" no encuentra nada por sí solo. Señal deliberadamente
+    acotada: solo cuando la búsqueda con el mensaje tal cual no encontró
+    NADA y sí hay conversación previa de la cual partir (ver
+    llm.py::rewrite_query) -- evita una llamada extra a Groq en el caso
+    común donde la pregunta ya funciona bien tal cual."""
+    return not chunks and bool(conversation_history)
 
 
 def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
@@ -143,24 +133,33 @@ def _draft_response(
     total_start = time.perf_counter()
     chunks, retrieval_ms = retrieve_context(question)
 
-    cached_answer = answer_cache_service.try_get_cached_answer(question, chunks)
+    retrieval_question = question
+    if _needs_query_rewrite(chunks, conversation_history):
+        rewrite_start = time.perf_counter()
+        rewritten = llm.rewrite_query(question, conversation_history)
+        if rewritten and rewritten.strip().lower() != question.strip().lower():
+            new_chunks, _ = retrieve_context(rewritten)
+            if new_chunks:
+                chunks = new_chunks
+                retrieval_question = rewritten
+        retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
+
+    cached_answer = answer_cache_service.try_get_cached_answer(retrieval_question, chunks)
     gen_start = time.perf_counter()
     if cached_answer is not None:
         answer_text = cached_answer
-        generation_ms = (time.perf_counter() - gen_start) * 1000
-        time.sleep(_CACHE_HIT_FLAT_DELAY_SECONDS)
     else:
         context = build_context(chunks) if chunks else ""
         answer_text = llm.generate_answer(question, context, conversation_history)
-        generation_ms = (time.perf_counter() - gen_start) * 1000
+    generation_ms = (time.perf_counter() - gen_start) * 1000
     total_ms = (time.perf_counter() - total_start) * 1000
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
-    hide_sources = is_no_info or _looks_too_short_for_citation(question)
+    hide_sources = is_no_info or _looks_too_short_for_citation(retrieval_question)
     suggestions = _suggest_clarifications(question) if is_no_info else []
 
     if cached_answer is None:
-        answer_cache_service.maybe_store_answer(question, chunks, answer_text)
+        answer_cache_service.maybe_store_answer(retrieval_question, chunks, answer_text)
 
     history_service.record_chat_metrics(
         session_id,
@@ -235,28 +234,35 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
         return
 
     chunks, retrieval_ms = retrieve_context(question)
+    conversation_history = history_service.get_history(session_id)
 
-    sources = _dedup_sources(chunks) if chunks and not _looks_too_short_for_citation(question) else []
+    retrieval_question = question
+    if _needs_query_rewrite(chunks, conversation_history):
+        rewrite_start = time.perf_counter()
+        rewritten = llm.rewrite_query(question, conversation_history)
+        if rewritten and rewritten.strip().lower() != question.strip().lower():
+            new_chunks, _ = retrieve_context(rewritten)
+            if new_chunks:
+                chunks = new_chunks
+                retrieval_question = rewritten
+        retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
+
+    sources = _dedup_sources(chunks) if chunks and not _looks_too_short_for_citation(retrieval_question) else []
 
     yield {"type": "meta", "sources": [s.model_dump() for s in sources], "has_sufficient_info": bool(chunks)}
 
-    cached_answer = answer_cache_service.try_get_cached_answer(question, chunks)
+    cached_answer = answer_cache_service.try_get_cached_answer(retrieval_question, chunks)
     gen_start = time.perf_counter()
     if cached_answer is not None:
         full_answer = cached_answer
-        generation_ms = (time.perf_counter() - gen_start) * 1000
-        time.sleep(_CACHE_HIT_INITIAL_DELAY_SECONDS)
-        for piece in _simulate_typing_deltas(full_answer):
-            yield {"type": "delta", "text": piece}
-            time.sleep(_CACHE_HIT_WORD_DELAY_SECONDS)
+        yield {"type": "delta", "text": full_answer}
     else:
         context = build_context(chunks) if chunks else ""
-        conversation_history = history_service.get_history(session_id)
         full_answer = ""
         for delta in llm.stream_answer(question, context, conversation_history):
             full_answer += delta
             yield {"type": "delta", "text": delta}
-        generation_ms = (time.perf_counter() - gen_start) * 1000
+    generation_ms = (time.perf_counter() - gen_start) * 1000
 
     _save_and_broadcast_turn(session_id, question, full_answer)
 
@@ -264,7 +270,7 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
     suggestions = _suggest_clarifications(question) if is_no_info else []
 
     if cached_answer is None:
-        answer_cache_service.maybe_store_answer(question, chunks, full_answer)
+        answer_cache_service.maybe_store_answer(retrieval_question, chunks, full_answer)
 
     history_service.record_chat_metrics(
         session_id,

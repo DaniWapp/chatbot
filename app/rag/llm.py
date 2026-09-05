@@ -179,6 +179,59 @@ def stream_answer(
             yield delta
 
 
+_REWRITE_HISTORY_TURNS = 3
+
+
+def rewrite_query(question: str, history: List[Tuple[str, str]]) -> Optional[str]:
+    """Reescribe una pregunta corta/ambigua como una versión autónoma que
+    incorpora el tema implícito de los últimos turnos de la conversación
+    (ej. "precio" tras hablar de "Ingeniería en TIC" -> "precio de
+    Ingeniería en TIC"). Se usa ÚNICAMENTE para mejorar la búsqueda
+    semántica (retrieval) cuando la pregunta tal cual no encontró nada
+    relevante -- ver chat_service.py::_needs_query_rewrite. Nunca se le
+    muestra al estudiante ni se usa como la pregunta final para el LLM (esa
+    sigue siendo la original, que ya recibe el historial completo aparte).
+
+    Nunca lanza: ante cualquier fallo de Groq o una respuesta no parseable
+    devuelve None, y el llamador sigue con la pregunta original sin
+    reformular -- best-effort, nunca debe bloquear ni degradar el flujo
+    normal de "no encontré información"."""
+    if not history:
+        return None
+
+    history_text = "\n".join(
+        f"Estudiante: {q}\nAsistente: {a}" for q, a in history[-_REWRITE_HISTORY_TURNS:]
+    )
+    prompt = (
+        "Reescribe la ÚLTIMA pregunta del estudiante como una pregunta autónoma y completa, "
+        "incorporando el tema o sujeto del que se estaba hablando en la conversación, para que "
+        "tenga sentido por sí sola sin necesidad de leer el historial. No inventes información "
+        "nueva, solo aclara a qué se refiere -- por ejemplo, si antes se habló de \"Ingeniería en "
+        "TIC\" y la última pregunta es \"precio\", la reescritura debe ser \"precio de Ingeniería "
+        "en TIC\". Si la pregunta ya es autónoma y no depende del historial, devuélvela igual.\n\n"
+        f"HISTORIAL:\n{history_text}\n\n"
+        f"ÚLTIMA PREGUNTA: {question}\n\n"
+        'Responde ÚNICAMENTE con JSON: {"rewritten": "..."}'
+    )
+
+    try:
+        completion = _create_completion(
+            "rewrite_query",
+            model=settings.GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_completion_tokens=100,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        rewritten = parsed.get("rewritten")
+        return rewritten.strip() if isinstance(rewritten, str) and rewritten.strip() else None
+    except Exception:
+        logger.exception("Fallo reformulando la pregunta para mejorar la búsqueda")
+        return None
+
+
 def classify_department(
     question: str, dependencias: List[dict], chunk_hints: Optional[List[dict]] = None
 ) -> Optional[int]:
