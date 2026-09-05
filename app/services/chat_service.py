@@ -20,6 +20,27 @@ from app.services import history as history_service
 from app.services import ws_manager
 
 
+# Un hit de caché (ver answer_cache_service) resuelve la respuesta casi
+# instantáneo (unos pocos ms), lo cual se siente raro/artificial frente a
+# la generación real por streaming, que siempre toma al menos un segundo.
+# Estas pausas son puramente de UX -- no se miden como generation_ms (esa
+# métrica se calcula ANTES de aplicarlas, para que el dashboard siga
+# reflejando el tiempo de cómputo real, no la espera simulada).
+_CACHE_HIT_INITIAL_DELAY_SECONDS = 0.4
+_CACHE_HIT_WORD_DELAY_SECONDS = 0.02
+_CACHE_HIT_FLAT_DELAY_SECONDS = 1.0
+
+
+def _simulate_typing_deltas(text: str) -> Generator[str, None, None]:
+    """Trocea una respuesta cacheada en palabras para emitirlas una a una
+    (con una pequeña pausa entre cada una, ver _CACHE_HIT_WORD_DELAY_SECONDS
+    en el llamador) en vez de un solo bloque de texto completo -- así un
+    hit de caché se sigue sintiendo como el bot escribiendo en vivo."""
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        yield word if i == len(words) - 1 else word + " "
+
+
 def _looks_too_short_for_citation(question: str) -> bool:
     """Mensajes de 1-2 palabras (ej. "gracias", "ok", "listo") no son
     preguntas reales sobre la facultad; si por casualidad su embedding
@@ -126,10 +147,12 @@ def _draft_response(
     gen_start = time.perf_counter()
     if cached_answer is not None:
         answer_text = cached_answer
+        generation_ms = (time.perf_counter() - gen_start) * 1000
+        time.sleep(_CACHE_HIT_FLAT_DELAY_SECONDS)
     else:
         context = build_context(chunks) if chunks else ""
         answer_text = llm.generate_answer(question, context, conversation_history)
-    generation_ms = (time.perf_counter() - gen_start) * 1000
+        generation_ms = (time.perf_counter() - gen_start) * 1000
     total_ms = (time.perf_counter() - total_start) * 1000
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
@@ -221,7 +244,11 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
     gen_start = time.perf_counter()
     if cached_answer is not None:
         full_answer = cached_answer
-        yield {"type": "delta", "text": full_answer}
+        generation_ms = (time.perf_counter() - gen_start) * 1000
+        time.sleep(_CACHE_HIT_INITIAL_DELAY_SECONDS)
+        for piece in _simulate_typing_deltas(full_answer):
+            yield {"type": "delta", "text": piece}
+            time.sleep(_CACHE_HIT_WORD_DELAY_SECONDS)
     else:
         context = build_context(chunks) if chunks else ""
         conversation_history = history_service.get_history(session_id)
@@ -229,7 +256,7 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
         for delta in llm.stream_answer(question, context, conversation_history):
             full_answer += delta
             yield {"type": "delta", "text": delta}
-    generation_ms = (time.perf_counter() - gen_start) * 1000
+        generation_ms = (time.perf_counter() - gen_start) * 1000
 
     _save_and_broadcast_turn(session_id, question, full_answer)
 
