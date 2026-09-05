@@ -195,17 +195,23 @@ function documentDependenciaOptionsHtml(selectedId) {
   return generalOption + depOptions;
 }
 
-async function openDocumentsModal() {
-  const isGeneral = getAdminRole() === "general";
-  let documents = [];
-  try {
-    const res = await adminFetch("/api/admin/documents");
-    documents = await res.json();
-  } catch {
-    return; // adminFetch ya maneja el caso de sesión inválida.
+let allPanelDocuments = [];
+
+function buildPanelDocumentsRowsHtml(isGeneral) {
+  const searchInput = document.getElementById("panel-documents-search");
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  const filtered = query
+    ? allPanelDocuments.filter((doc) => doc.filename.toLowerCase().includes(query))
+    : allPanelDocuments;
+
+  const emptyEl = document.getElementById("panel-documents-empty");
+  if (emptyEl) {
+    emptyEl.hidden = filtered.length > 0;
+    emptyEl.textContent =
+      allPanelDocuments.length === 0 ? "Todavía no hay documentos." : "Ningún documento coincide con la búsqueda.";
   }
 
-  const rowsHtml = documents
+  return filtered
     .map((doc) => {
       const depCell = isGeneral ? `<td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>` : "";
       const recategorizeControl = isGeneral
@@ -227,32 +233,12 @@ async function openDocumentsModal() {
       `;
     })
     .join("");
+}
 
-  const modalTitle = isGeneral
-    ? "Documentos"
-    : `Documentos de ${escapeHtml(dependenciaNameById(getAdminDependenciaId()))}`;
-
-  openModal(`
-    <div class="panel-section-header">
-      <h3>${modalTitle}</h3>
-      <button type="button" id="panel-new-document-button" class="primary-button">+ Subir documento</button>
-    </div>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Archivo</th>
-          <th>Tamaño</th>
-          ${isGeneral ? "<th>Dependencia</th>" : ""}
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="panel-documents-table-body">${rowsHtml}</tbody>
-    </table>
-    <p id="panel-documents-empty" class="empty-hint" ${documents.length ? "hidden" : ""}>Todavía no hay documentos.</p>
-    <div class="modal-actions">
-      <button type="button" class="cancel-button">Cerrar</button>
-    </div>
-  `);
+function rerenderPanelDocumentsTable(isGeneral) {
+  const tbody = document.getElementById("panel-documents-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = buildPanelDocumentsRowsHtml(isGeneral);
 
   modalContentEl.querySelectorAll(".preview-doc-button").forEach((button) => {
     button.addEventListener("click", () => previewPanelDocument(button.dataset.filename));
@@ -265,7 +251,46 @@ async function openDocumentsModal() {
       select.addEventListener("change", () => recategorizePanelDocument(select.dataset.filename, select));
     });
   }
+}
 
+async function openDocumentsModal() {
+  const isGeneral = getAdminRole() === "general";
+  try {
+    const res = await adminFetch("/api/admin/documents");
+    allPanelDocuments = await res.json();
+  } catch {
+    return; // adminFetch ya maneja el caso de sesión inválida.
+  }
+
+  const modalTitle = isGeneral
+    ? "Documentos"
+    : `Documentos de ${escapeHtml(dependenciaNameById(getAdminDependenciaId()))}`;
+
+  openModal(`
+    <div class="panel-section-header">
+      <h3>${modalTitle}</h3>
+      <button type="button" id="panel-new-document-button" class="primary-button">+ Subir documento</button>
+    </div>
+    <input id="panel-documents-search" type="text" class="search-input" placeholder="Buscar documento por nombre..." />
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Archivo</th>
+          <th>Tamaño</th>
+          ${isGeneral ? "<th>Dependencia</th>" : ""}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="panel-documents-table-body"></tbody>
+    </table>
+    <p id="panel-documents-empty" class="empty-hint" hidden></p>
+    <div class="modal-actions">
+      <button type="button" class="cancel-button">Cerrar</button>
+    </div>
+  `);
+
+  rerenderPanelDocumentsTable(isGeneral);
+  document.getElementById("panel-documents-search").addEventListener("input", () => rerenderPanelDocumentsTable(isGeneral));
   document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
 }
 

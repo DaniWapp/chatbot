@@ -225,6 +225,21 @@ body {
   color: var(--text-muted);
 }
 
+.search-input {
+  width: 100%;
+  max-width: 320px;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 4px;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
 .primary-button {
   border: none;
   background: var(--accent-dark);

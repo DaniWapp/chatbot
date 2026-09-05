@@ -583,10 +583,19 @@ function documentDependenciaOptionsHtml(selectedId) {
 function renderDocumentsTable() {
   const tbody = document.getElementById("documents-table-body");
   const emptyEl = document.getElementById("documents-empty");
+  const searchInput = document.getElementById("documents-search");
   tbody.innerHTML = "";
-  emptyEl.hidden = documents.length > 0;
 
-  for (const doc of documents) {
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  const filteredDocuments = query
+    ? documents.filter((doc) => doc.filename.toLowerCase().includes(query))
+    : documents;
+
+  emptyEl.hidden = filteredDocuments.length > 0;
+  emptyEl.textContent =
+    documents.length === 0 ? "Todavía no hay documentos indexados." : "Ningún documento coincide con la búsqueda.";
+
+  for (const doc of filteredDocuments) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(doc.filename)}</td>
@@ -669,6 +678,8 @@ async function deleteDocument(doc) {
     // rootFetch ya maneja el caso de sesión inválida.
   }
 }
+
+document.getElementById("documents-search").addEventListener("input", renderDocumentsTable);
 
 document.getElementById("new-document-button").addEventListener("click", () => {
   openModal(`
