@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.config import settings
-from app.rag import vector_store
+from app.rag import reranker, vector_store
 from app.rag.embeddings import embed_query
 
 
@@ -32,14 +32,26 @@ def _to_chunk(h: dict) -> RetrievedChunk:
 def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     """Recupera los fragmentos más relevantes para una pregunta.
 
-    Solo se devuelven los fragmentos cuya similitud supera SIMILARITY_THRESHOLD.
-    Si ninguno lo supera, se devuelve una lista vacía: el chatbot debe entonces
-    reconocer que no tiene información suficiente, en vez de alucinar.
+    Primero filtra por SIMILARITY_THRESHOLD (embeddings, barato) sobre un
+    lote más amplio de candidatos (RERANK_CANDIDATE_K), y si RERANK_ENABLED
+    los reordena/filtra por relevancia real con un cross-encoder local
+    (ver app/rag/reranker.py) -- la similitud de embeddings por sí sola
+    puede coincidir con fragmentos de un tema distinto que comparten
+    vocabulario. Puede devolver una lista vacía (ni el umbral de embeddings
+    ni el re-ranking encontraron algo realmente relevante): el chatbot debe
+    entonces reconocer que no tiene información suficiente, en vez de
+    alucinar.
     """
     top_k = top_k or settings.TOP_K
     query_embedding = embed_query(question)
-    hits = vector_store.query(query_embedding, top_k=top_k)
-    return [_to_chunk(h) for h in hits if h["similarity"] >= settings.SIMILARITY_THRESHOLD]
+    candidate_k = max(top_k, settings.RERANK_CANDIDATE_K)
+    hits = vector_store.query(query_embedding, top_k=candidate_k)
+    candidates = [_to_chunk(h) for h in hits if h["similarity"] >= settings.SIMILARITY_THRESHOLD]
+    if not candidates:
+        return []
+    if not settings.RERANK_ENABLED:
+        return candidates[:top_k]
+    return reranker.rerank(question, candidates, top_k=top_k, min_score=settings.RERANK_MIN_SCORE)
 
 
 def retrieve_below_threshold(question: str, top_k: int = None) -> List[RetrievedChunk]:

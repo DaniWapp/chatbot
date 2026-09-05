@@ -1,11 +1,15 @@
 """Pruebas del umbral de relevancia en la recuperación semántica.
 
-Se simulan (mock) el embedding de la consulta y la respuesta del vector store
-para no depender de descargar el modelo de embeddings real en cada test.
+Se simulan (mock) el embedding de la consulta, la respuesta del vector store,
+y el re-ranking (devuelto tal cual, sin reordenar) para no depender de
+descargar el modelo de embeddings ni el cross-encoder real en cada test.
 """
 from unittest.mock import patch
 
 from app.rag import retriever
+
+def _rerank_passthrough(question, chunks, top_k, min_score):
+    return chunks[:top_k]
 
 
 FAKE_HITS = [
@@ -26,9 +30,10 @@ FAKE_HITS = [
 ]
 
 
+@patch("app.rag.retriever.reranker.rerank", side_effect=_rerank_passthrough)
 @patch("app.rag.retriever.vector_store.query", return_value=FAKE_HITS)
 @patch("app.rag.retriever.embed_query", return_value=[0.1, 0.2, 0.3])
-def test_relevant_question_keeps_only_chunks_above_threshold(mock_embed, mock_query):
+def test_relevant_question_keeps_only_chunks_above_threshold(mock_embed, mock_query, mock_rerank):
     results = retriever.retrieve("¿Cuáles son los requisitos de grado?")
 
     assert len(results) == 1

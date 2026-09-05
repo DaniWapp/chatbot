@@ -30,3 +30,6 @@ Thumbs.db
 
 # Tests
 .pytest_cache/
+
+# Estado local de Claude Code
+.claude/

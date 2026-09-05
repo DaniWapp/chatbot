@@ -44,6 +44,17 @@ class Settings:
     # señal débil de relación con la pregunta.
     SUGGESTION_MIN_SIMILARITY: float = _get_float("SUGGESTION_MIN_SIMILARITY", 0.10)
 
+    # --- Re-ranking (app/rag/reranker.py) ---
+    # Modelo local (sentence-transformers CrossEncoder, sin llamadas a Groq)
+    # que juzga relevancia real pregunta-fragmento, no solo similitud de
+    # embeddings -- ver docs/ (caso "duración"/"nivel" encontrando algo del
+    # tema equivocado). RERANK_MIN_SCORE es un punto de partida, se calibra
+    # observando resultados reales.
+    RERANK_ENABLED: bool = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+    RERANKER_MODEL: str = os.getenv("RERANKER_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
+    RERANK_CANDIDATE_K: int = _get_int("RERANK_CANDIDATE_K", 10)
+    RERANK_MIN_SCORE: float = _get_float("RERANK_MIN_SCORE", 0.3)
+
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)
     HISTORY_DB_PATH: Path = BASE_DIR / os.getenv("HISTORY_DB_PATH", "history.db")

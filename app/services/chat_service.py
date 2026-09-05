@@ -13,7 +13,7 @@ from typing import Generator, List, Tuple
 
 from app.config import settings
 from app.models.schemas import ChatMetrics, ChatResponse, SourceCitation
-from app.rag import llm
+from app.rag import llm, reranker
 from app.rag.retriever import RetrievedChunk, build_context, retrieve, retrieve_below_threshold
 from app.services import answer_cache_service
 from app.services import history as history_service
@@ -34,8 +34,8 @@ def _needs_query_rewrite(chunks: List[RetrievedChunk], conversation_history: Lis
     "Ingeniería en TIC" no encuentra nada por sí solo. Señal deliberadamente
     acotada: solo cuando la búsqueda con el mensaje tal cual no encontró
     NADA y sí hay conversación previa de la cual partir (ver
-    llm.py::rewrite_query) -- evita una llamada extra a Groq en el caso
-    común donde la pregunta ya funciona bien tal cual."""
+    llm.py::rewrite_query_variations) -- evita una llamada extra a Groq en
+    el caso común donde la pregunta ya funciona bien tal cual."""
     return not chunks and bool(conversation_history)
 
 
@@ -55,13 +55,16 @@ def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
 ESCALATED_NOTICE = "Tu mensaje fue enviado a tu asesor. Pronto te responderá aquí mismo."
 
 
-def _save_and_broadcast_turn(session_id: str, question: str, answer: str) -> None:
-    """Persiste el turno. Ya no se notifica al panel: mientras el bot sigue
+def _save_and_broadcast_turn(session_id: str, question: str, answer: str) -> str:
+    """Persiste el turno y devuelve su created_at -- el cliente lo necesita
+    para poder identificar después esta respuesta puntual al dar feedback
+    (ver app/services/history.py::record_feedback, turns no expone su id
+    autoincremental). Ya no se notifica al panel: mientras el bot sigue
     respondiendo (needs_human es False), la conversación no pertenece a
     ninguna dependencia todavía -- eso solo ocurre al escalar, momento en
     el que sí se avisa al administrador correspondiente (ver
     app/api/routes.py:escalate)."""
-    history_service.append_turn(session_id, question, answer)
+    return history_service.append_turn(session_id, question, answer)
 
 
 def _save_and_broadcast_student_message(session_id: str, message: str) -> None:
@@ -87,6 +90,54 @@ def retrieve_context(question: str) -> Tuple[List[RetrievedChunk], float]:
     chunks = retrieve(question)
     retrieval_ms = (time.perf_counter() - start) * 1000
     return chunks, retrieval_ms
+
+
+def _try_multi_query_rewrite(
+    question: str,
+    chunks: List[RetrievedChunk],
+    retrieval_ms: float,
+    conversation_history: List[Tuple[str, str]],
+) -> Tuple[List[RetrievedChunk], str, float]:
+    """Si _needs_query_rewrite decide que hace falta, pide varias
+    reformulaciones autónomas de la pregunta (multi-query retrieval:
+    distintas formulaciones pueden coincidir con fragmentos distintos del
+    índice) y busca con cada una, combinando los fragmentos sin duplicar
+    por chunk_id y re-rankeando el conjunto combinado una vez más para
+    quedarse con los TOP_K realmente mejores entre todas las variaciones.
+
+    Devuelve (chunks, pregunta_para_retrieval_y_caché, retrieval_ms ya
+    incluyendo el costo de esto). Si no hacía falta reformular, o ninguna
+    variación encontró nada mejor, devuelve los chunks y la pregunta
+    original sin cambios -- nunca deja la búsqueda peor de lo que ya
+    estaba."""
+    if not _needs_query_rewrite(chunks, conversation_history):
+        return chunks, question, retrieval_ms
+
+    rewrite_start = time.perf_counter()
+    variations = llm.rewrite_query_variations(question, conversation_history)
+    combined: List[RetrievedChunk] = []
+    seen_ids = set()
+    for variation in variations:
+        if variation.strip().lower() == question.strip().lower():
+            continue
+        variation_chunks, _ = retrieve_context(variation)
+        for c in variation_chunks:
+            if c.chunk_id not in seen_ids:
+                seen_ids.add(c.chunk_id)
+                combined.append(c)
+
+    retrieval_question = question
+    if combined:
+        if settings.RERANK_ENABLED:
+            combined = reranker.rerank(question, combined, settings.TOP_K, settings.RERANK_MIN_SCORE)
+        else:
+            combined = combined[: settings.TOP_K]
+    if combined:
+        chunks = combined
+        retrieval_question = variations[0]
+
+    retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
+    return chunks, retrieval_question, retrieval_ms
 
 
 _SUGGESTION_CANDIDATE_POOL = 20
@@ -132,17 +183,9 @@ def _draft_response(
     necesita para guardar el turno."""
     total_start = time.perf_counter()
     chunks, retrieval_ms = retrieve_context(question)
-
-    retrieval_question = question
-    if _needs_query_rewrite(chunks, conversation_history):
-        rewrite_start = time.perf_counter()
-        rewritten = llm.rewrite_query(question, conversation_history)
-        if rewritten and rewritten.strip().lower() != question.strip().lower():
-            new_chunks, _ = retrieve_context(rewritten)
-            if new_chunks:
-                chunks = new_chunks
-                retrieval_question = rewritten
-        retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
+    chunks, retrieval_question, retrieval_ms = _try_multi_query_rewrite(
+        question, chunks, retrieval_ms, conversation_history
+    )
 
     cached_answer = answer_cache_service.try_get_cached_answer(retrieval_question, chunks)
     gen_start = time.perf_counter()
@@ -199,7 +242,7 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
 
     conversation_history = history_service.get_history(session_id)
     response, answer_text = _draft_response(session_id, question, conversation_history)
-    _save_and_broadcast_turn(session_id, question, answer_text)
+    response.turn_created_at = _save_and_broadcast_turn(session_id, question, answer_text)
     return response
 
 
@@ -235,17 +278,9 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
 
     chunks, retrieval_ms = retrieve_context(question)
     conversation_history = history_service.get_history(session_id)
-
-    retrieval_question = question
-    if _needs_query_rewrite(chunks, conversation_history):
-        rewrite_start = time.perf_counter()
-        rewritten = llm.rewrite_query(question, conversation_history)
-        if rewritten and rewritten.strip().lower() != question.strip().lower():
-            new_chunks, _ = retrieve_context(rewritten)
-            if new_chunks:
-                chunks = new_chunks
-                retrieval_question = rewritten
-        retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
+    chunks, retrieval_question, retrieval_ms = _try_multi_query_rewrite(
+        question, chunks, retrieval_ms, conversation_history
+    )
 
     sources = _dedup_sources(chunks) if chunks and not _looks_too_short_for_citation(retrieval_question) else []
 
@@ -264,7 +299,7 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
             yield {"type": "delta", "text": delta}
     generation_ms = (time.perf_counter() - gen_start) * 1000
 
-    _save_and_broadcast_turn(session_id, question, full_answer)
+    turn_created_at = _save_and_broadcast_turn(session_id, question, full_answer)
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
     suggestions = _suggest_clarifications(question) if is_no_info else []
@@ -284,6 +319,7 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
     yield {
         "type": "done",
         "suggestions": suggestions,
+        "turn_created_at": turn_created_at,
         "metrics": {
             "retrieval_ms": round(retrieval_ms, 2),
             "generation_ms": round(generation_ms, 2),

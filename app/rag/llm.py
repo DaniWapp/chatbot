@@ -182,36 +182,45 @@ def stream_answer(
 _REWRITE_HISTORY_TURNS = 3
 
 
-def rewrite_query(question: str, history: List[Tuple[str, str]]) -> Optional[str]:
-    """Reescribe una pregunta corta/ambigua como una versión autónoma que
-    incorpora el tema implícito de los últimos turnos de la conversación
-    (ej. "precio" tras hablar de "Ingeniería en TIC" -> "precio de
-    Ingeniería en TIC"). Se usa ÚNICAMENTE para mejorar la búsqueda
-    semántica (retrieval) cuando la pregunta tal cual no encontró nada
-    relevante -- ver chat_service.py::_needs_query_rewrite. Nunca se le
-    muestra al estudiante ni se usa como la pregunta final para el LLM (esa
-    sigue siendo la original, que ya recibe el historial completo aparte).
+def rewrite_query_variations(
+    question: str, history: List[Tuple[str, str]], max_variations: int = 3
+) -> List[str]:
+    """Reescribe una pregunta corta/ambigua como varias versiones autónomas
+    que incorporan el tema implícito de los últimos turnos de la
+    conversación (ej. "precio" tras hablar de "Ingeniería en TIC" ->
+    ["precio de Ingeniería en TIC", "costo de matrícula de Ingeniería en
+    TIC", ...]). Varias variaciones (no solo una) mejoran la cobertura de
+    la búsqueda semántica -- distintas formulaciones pueden coincidir con
+    fragmentos distintos del índice (multi-query retrieval). Se usa
+    ÚNICAMENTE para mejorar la búsqueda (retrieval) cuando la pregunta tal
+    cual no encontró nada relevante -- ver
+    chat_service.py::_needs_query_rewrite. Nunca se le muestra al
+    estudiante ni se usa como la pregunta final para el LLM (esa sigue
+    siendo la original, que ya recibe el historial completo aparte).
 
     Nunca lanza: ante cualquier fallo de Groq o una respuesta no parseable
-    devuelve None, y el llamador sigue con la pregunta original sin
+    devuelve lista vacía, y el llamador sigue con la pregunta original sin
     reformular -- best-effort, nunca debe bloquear ni degradar el flujo
     normal de "no encontré información"."""
     if not history:
-        return None
+        return []
 
     history_text = "\n".join(
         f"Estudiante: {q}\nAsistente: {a}" for q, a in history[-_REWRITE_HISTORY_TURNS:]
     )
     prompt = (
-        "Reescribe la ÚLTIMA pregunta del estudiante como una pregunta autónoma y completa, "
-        "incorporando el tema o sujeto del que se estaba hablando en la conversación, para que "
-        "tenga sentido por sí sola sin necesidad de leer el historial. No inventes información "
-        "nueva, solo aclara a qué se refiere -- por ejemplo, si antes se habló de \"Ingeniería en "
-        "TIC\" y la última pregunta es \"precio\", la reescritura debe ser \"precio de Ingeniería "
-        "en TIC\". Si la pregunta ya es autónoma y no depende del historial, devuélvela igual.\n\n"
+        f"Reescribe la ÚLTIMA pregunta del estudiante como hasta {max_variations} versiones "
+        "autónomas y completas, incorporando el tema o sujeto del que se estaba hablando en la "
+        "conversación, para que cada una tenga sentido por sí sola sin necesidad de leer el "
+        "historial. No inventes información nueva, solo aclara a qué se refiere -- por ejemplo, si "
+        "antes se habló de \"Ingeniería en TIC\" y la última pregunta es \"precio\", una "
+        "reescritura válida es \"precio de Ingeniería en TIC\". Varía la redacción entre las "
+        "versiones (sinónimos, orden distinto) para cubrir más formas de encontrar la misma "
+        "información. Si la pregunta ya es autónoma y no depende del historial, devuélvela igual "
+        "como única versión.\n\n"
         f"HISTORIAL:\n{history_text}\n\n"
         f"ÚLTIMA PREGUNTA: {question}\n\n"
-        'Responde ÚNICAMENTE con JSON: {"rewritten": "..."}'
+        'Responde ÚNICAMENTE con JSON: {"variations": ["...", "..."]}'
     )
 
     try:
@@ -219,17 +228,19 @@ def rewrite_query(question: str, history: List[Tuple[str, str]]) -> Optional[str
             "rewrite_query",
             model=settings.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_completion_tokens=100,
+            temperature=0.2,
+            max_completion_tokens=200,
             reasoning_effort="low",
             response_format={"type": "json_object"},
         )
         parsed = json.loads(completion.choices[0].message.content or "{}")
-        rewritten = parsed.get("rewritten")
-        return rewritten.strip() if isinstance(rewritten, str) and rewritten.strip() else None
+        variations = parsed.get("variations")
+        if not isinstance(variations, list):
+            return []
+        return [v.strip() for v in variations if isinstance(v, str) and v.strip()][:max_variations]
     except Exception:
         logger.exception("Fallo reformulando la pregunta para mejorar la búsqueda")
-        return None
+        return []
 
 
 def classify_department(
