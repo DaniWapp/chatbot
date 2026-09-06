@@ -109,6 +109,26 @@ def test_answer_with_chunks_includes_sources(mock_retrieve, mock_generate):
     assert response.sources[0].document == "Reglamento.pdf"
 
 
+@patch("app.rag.llm.generate_answer")
+@patch("app.services.chat_service.retrieve_context")
+def test_short_question_with_real_chunks_still_includes_sources(mock_retrieve, mock_generate):
+    """Una pregunta de 2 palabras ("horario álgebra") puede ser una consulta
+    real y específica -- si superó el umbral de similitud (por eso llegó
+    con chunks no vacíos), debe citar su fuente igual que una pregunta
+    larga. No hay que confundirla con un mensaje de relleno tipo "gracias"
+    u "ok", que de todos modos no recupera chunks reales."""
+    chunk = RetrievedChunk(
+        chunk_id="c1", text="Horario de Álgebra Lineal: martes 9-11, salón A102.", document="Horario.xlsx", page=1, similarity=0.75
+    )
+    mock_retrieve.return_value = ([chunk], 5.0)
+    mock_generate.return_value = "El horario de Álgebra Lineal es martes de 9 a 11, salón A102."
+
+    response = chat_service.answer_question("s1", "horario álgebra")
+
+    assert len(response.sources) == 1
+    assert response.sources[0].document == "Horario.xlsx"
+
+
 # --- llm.suggest_clarifying_questions (unidad, Groq simulado) -----------
 
 

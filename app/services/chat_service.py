@@ -27,14 +27,6 @@ from app.services import hostility_service
 from app.services import ws_manager
 
 
-def _looks_too_short_for_citation(question: str) -> bool:
-    """Mensajes de 1-2 palabras (ej. "gracias", "ok", "listo") no son
-    preguntas reales sobre la facultad; si por casualidad su embedding
-    coincide débilmente con algún fragmento (apenas sobre el umbral de
-    similitud), no tiene sentido citarlo como fuente."""
-    return len(question.strip().split()) < 3
-
-
 def _needs_query_rewrite(chunks: List[RetrievedChunk], conversation_history: List[Tuple[str, str]]) -> bool:
     """La búsqueda semántica solo usa el mensaje actual, nunca el
     historial -- un seguimiento corto como "precio" tras hablar de
@@ -206,7 +198,6 @@ def _draft_response(
     total_ms = (time.perf_counter() - total_start) * 1000
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
-    hide_sources = is_no_info or _looks_too_short_for_citation(retrieval_question)
     suggestions = _suggest_clarifications(question) if is_no_info else []
 
     if cached_answer is None:
@@ -223,7 +214,7 @@ def _draft_response(
 
     response = ChatResponse(
         answer=answer_text,
-        sources=[] if hide_sources else _dedup_sources(chunks),
+        sources=[] if is_no_info else _dedup_sources(chunks),
         has_sufficient_info=not is_no_info,
         suggestions=suggestions,
         metrics=ChatMetrics(
@@ -314,7 +305,7 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
         question, chunks, retrieval_ms, conversation_history
     )
 
-    sources = _dedup_sources(chunks) if chunks and not _looks_too_short_for_citation(retrieval_question) else []
+    sources = _dedup_sources(chunks) if chunks else []
 
     yield {"type": "meta", "sources": [s.model_dump() for s in sources], "has_sufficient_info": bool(chunks)}
 
