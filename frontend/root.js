@@ -171,6 +171,7 @@ async function loadDependencias() {
   const res = await rootFetch("/api/root/dependencias");
   dependencias = await res.json();
   renderDependenciasTable();
+  renderDocumentDependenciaChips();
 }
 
 function renderDependenciasTable() {
@@ -236,7 +237,7 @@ function openHorarioModal(dep, baseUrl) {
       <div id="horario-rangos-list">
         ${rangosActuales.map(([inicio, fin]) => horarioRangoRowHtml(inicio, fin)).join("")}
       </div>
-      <button type="button" id="add-horario-rango-button" class="secondary-button">+ Agregar bloque</button>
+      <button type="button" id="add-horario-rango-button" class="modal-secondary-button">+ Agregar bloque</button>
       <p id="horario-form-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="cancel-button">Cancelar</button>
@@ -836,10 +837,44 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+let documentDependenciaFilter = "all"; // "all" | "general" | <dependencia_id numérico>
+
 async function loadDocuments() {
   const res = await rootFetch("/api/root/documents");
   documents = await res.json();
+  renderDocumentDependenciaChips();
   renderDocumentsTable();
+}
+
+function renderDocumentDependenciaChips() {
+  const container = document.getElementById("documents-dependencia-chips");
+  const chips = [
+    { value: "all", label: "Todos" },
+    { value: "general", label: "General / compartido" },
+    ...dependencias.map((d) => ({ value: String(d.id), label: d.name })),
+  ];
+  container.innerHTML = chips
+    .map(
+      (chip) => `
+        <button type="button" class="filter-chip ${documentDependenciaFilter === chip.value ? "active" : ""}" data-value="${chip.value}">
+          ${escapeHtml(chip.label)}
+        </button>
+      `
+    )
+    .join("");
+  container.querySelectorAll(".filter-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      documentDependenciaFilter = btn.dataset.value;
+      renderDocumentDependenciaChips();
+      renderDocumentsTable();
+    });
+  });
+}
+
+function documentMatchesDependenciaFilter(doc) {
+  if (documentDependenciaFilter === "all") return true;
+  if (documentDependenciaFilter === "general") return doc.dependencia_id == null;
+  return doc.dependencia_id === Number(documentDependenciaFilter);
 }
 
 function documentDependenciaOptionsHtml(selectedId) {
@@ -857,9 +892,9 @@ function renderDocumentsTable() {
   tbody.innerHTML = "";
 
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
-  const filteredDocuments = query
-    ? documents.filter((doc) => doc.filename.toLowerCase().includes(query))
-    : documents;
+  const filteredDocuments = documents.filter(
+    (doc) => (!query || doc.filename.toLowerCase().includes(query)) && documentMatchesDependenciaFilter(doc)
+  );
 
   emptyEl.hidden = filteredDocuments.length > 0;
   emptyEl.textContent =
@@ -928,12 +963,14 @@ async function previewDocument(filename, basePath) {
     const truncatedNote = data.truncated
       ? `<p class="modal-hint">Mostrando solo los primeros ${data.text.length.toLocaleString("es")} caracteres del texto extraído.</p>`
       : "";
+    const downloadUrl = `/api/documents/${encodeURIComponent(data.filename)}/download?session_id=${encodeURIComponent("admin-" + getToken())}`;
     openModal(
       `
       <h3>Vista previa: ${escapeHtml(data.filename)}</h3>
       ${truncatedNote}
       <pre class="document-preview-text">${escapeHtml(data.text) || "(el documento no tiene texto extraíble)"}</pre>
       <div class="modal-actions">
+        <a class="primary-button" href="${downloadUrl}">Descargar original</a>
         <button type="button" class="cancel-button">Cerrar</button>
       </div>
     `,
@@ -1254,7 +1291,11 @@ function renderHostilityKeywordsTable(keywords) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(keyword.phrase)}</td>
-      <td><button type="button" class="danger delete-hostility-keyword-button">Eliminar</button></td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
+        </div>
+      </td>
     `;
     tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deleteHostilityKeyword(keyword));
     tbody.appendChild(tr);

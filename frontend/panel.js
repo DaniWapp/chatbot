@@ -329,13 +329,54 @@ function documentDependenciaOptionsHtml(selectedId) {
 }
 
 let allPanelDocuments = [];
+let panelDocumentDependenciaFilter = "all"; // "all" | "general" | <dependencia_id numérico>
+
+function panelDocumentMatchesDependenciaFilter(doc) {
+  if (panelDocumentDependenciaFilter === "all") return true;
+  if (panelDocumentDependenciaFilter === "general") return doc.dependencia_id == null;
+  return doc.dependencia_id === Number(panelDocumentDependenciaFilter);
+}
+
+function renderPanelDocumentDependenciaChips(isGeneral) {
+  const container = document.getElementById("panel-documents-dependencia-chips");
+  if (!container) return;
+  if (!isGeneral) {
+    // Un administrador de dependencia solo ve sus propios documentos --
+    // filtrar por dependencia no aporta nada, así que no se muestran chips.
+    container.innerHTML = "";
+    return;
+  }
+  const chips = [
+    { value: "all", label: "Todos" },
+    { value: "general", label: "General / compartido" },
+    ...dependenciasForReassign.map((d) => ({ value: String(d.id), label: d.name })),
+  ];
+  container.innerHTML = chips
+    .map(
+      (chip) => `
+        <button type="button" class="filter-chip ${panelDocumentDependenciaFilter === chip.value ? "active" : ""}" data-value="${chip.value}">
+          ${escapeHtml(chip.label)}
+        </button>
+      `
+    )
+    .join("");
+  container.querySelectorAll(".filter-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      panelDocumentDependenciaFilter = btn.dataset.value;
+      renderPanelDocumentDependenciaChips(isGeneral);
+      rerenderPanelDocumentsTable(isGeneral);
+    });
+  });
+}
 
 function buildPanelDocumentsRowsHtml(isGeneral) {
   const searchInput = document.getElementById("panel-documents-search");
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
-  const filtered = query
-    ? allPanelDocuments.filter((doc) => doc.filename.toLowerCase().includes(query))
-    : allPanelDocuments;
+  const filtered = allPanelDocuments.filter(
+    (doc) =>
+      (!query || doc.filename.toLowerCase().includes(query)) &&
+      (!isGeneral || panelDocumentMatchesDependenciaFilter(doc))
+  );
 
   const emptyEl = document.getElementById("panel-documents-empty");
   if (emptyEl) {
@@ -399,6 +440,7 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
 function rerenderPanelDocumentsTable(isGeneral) {
   const tbody = document.getElementById("panel-documents-table-body");
   if (!tbody) return;
+  renderPanelDocumentDependenciaChips(isGeneral);
   tbody.innerHTML = buildPanelDocumentsRowsHtml(isGeneral);
 
   tbody.querySelectorAll(".preview-doc-button").forEach((button) => {
@@ -664,12 +706,14 @@ async function previewPanelDocument(filename) {
     const truncatedNote = data.truncated
       ? `<p class="modal-hint">Mostrando solo los primeros ${data.text.length.toLocaleString("es")} caracteres del texto extraído.</p>`
       : "";
+    const downloadUrl = `/api/documents/${encodeURIComponent(data.filename)}/download?session_id=${encodeURIComponent("admin-" + getAdminToken())}`;
     openModal(
       `
       <h3>Vista previa: ${escapeHtml(data.filename)}</h3>
       ${truncatedNote}
       <pre class="document-preview-text">${escapeHtml(data.text) || "(el documento no tiene texto extraíble)"}</pre>
       <div class="modal-actions">
+        <a class="primary-button" href="${downloadUrl}">Descargar original</a>
         <button type="button" class="cancel-button">Cerrar</button>
       </div>
     `,
@@ -1355,7 +1399,11 @@ function renderPanelHostilityKeywordsTable(keywords) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(keyword.phrase)}</td>
-      <td><button type="button" class="danger delete-hostility-keyword-button">Eliminar</button></td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
+        </div>
+      </td>
     `;
     tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deletePanelHostilityKeyword(keyword));
     tbody.appendChild(tr);
@@ -1504,7 +1552,7 @@ function panelHorarioFormHtml(dep) {
       <div id="panel-horario-rangos-list">
         ${rangosActuales.map(([inicio, fin]) => panelHorarioRangoRowHtml(inicio, fin)).join("")}
       </div>
-      <button type="button" id="panel-add-horario-rango-button" class="secondary-button">+ Agregar bloque</button>
+      <button type="button" id="panel-add-horario-rango-button" class="modal-secondary-button">+ Agregar bloque</button>
       <p id="panel-horario-form-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="submit" class="primary-button">Guardar</button>
