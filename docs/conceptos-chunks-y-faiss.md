@@ -61,7 +61,10 @@ de consulta, y hacerlo rápido. Es el motor de búsqueda semántica del
 proyecto: no busca por palabras exactas, busca por significado.
 
 **Qué hace aquí, concretamente:** cada chunk se convierte en un vector
-(~384 números, el embedding -- ver `app/rag/embeddings.py`). FAISS guarda
+(384 números, el embedding -- ver `app/rag/embeddings.py`). Cómo se genera
+ese vector exactamente (tokenización, contextualización, pooling,
+normalización) está fuera del alcance de este documento -- ver
+[conceptos-embeddings.md](conceptos-embeddings.md). FAISS guarda
 todos esos vectores en un índice. Cuando llega una pregunta, esta también
 se convierte en un vector con el mismo modelo, y FAISS responde: "de todos
 los vectores guardados, estos son los `top_k` más parecidos a este, y así

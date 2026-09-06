@@ -46,3 +46,7 @@ detallados, y guías para usuarios concretos.
 - **[conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md)** --
   glosario: qué es un chunk, qué es la ingesta, qué hace FAISS y cómo, y
   dónde vive cada cosa (SQLite vs. archivos del índice vectorial).
+- **[conceptos-embeddings.md](conceptos-embeddings.md)** -- cómo una frase
+  se convierte en un vector de 384 números paso a paso (tokenización,
+  contextualización, pooling, normalización), con ejemplos reales
+  generados corriendo el modelo del proyecto.
