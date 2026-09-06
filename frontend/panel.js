@@ -219,32 +219,105 @@ function formatMinutes(minutes) {
   return `${(minutes / 60).toFixed(1)} h`;
 }
 
-function dashboardCardHtml(label, value) {
+function dashboardCardHtml(label, value, extraClass) {
   return `
-    <div class="dashboard-card">
+    <div class="dashboard-card${extraClass ? " " + extraClass : ""}">
       <span class="dashboard-card-value">${value}</span>
       <span class="dashboard-card-label">${escapeHtml(label)}</span>
     </div>
   `;
 }
 
-function dashboardCardsHtml(dashboard) {
+function dashboardSummaryHtml(dashboard) {
   const c = dashboard.conversations;
   const d = dashboard.documents;
   const f = dashboard.faq;
   const cards = [
-    ["Conversaciones escaladas", c.total_escalated],
-    ["Resueltas", c.resolved],
     ["Pendientes ahora", c.pending_now],
-    ["Escaladas en los últimos 7 días", c.last_7_days],
+    ["Conversaciones escaladas", c.total_escalated],
     ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
-    ["Resolución (promedio)", formatMinutes(c.avg_resolution_minutes)],
     ["Documentos indexados", d.total],
-    ["Tamaño total de documentos", formatSize(d.total_size_bytes)],
     ["FAQ pendientes por revisar", f.pending],
-    ["FAQ aceptadas", f.accepted],
   ];
-  return cards.map(([label, value]) => dashboardCardHtml(label, value)).join("");
+  return cards.map(([label, value]) => dashboardCardHtml(label, value, "dashboard-card-hero")).join("");
+}
+
+function dashboardSectionHtml(title, summaryHtml, detailHtml) {
+  return `
+    <details class="dashboard-section">
+      <summary>
+        <span class="dashboard-section-title">${escapeHtml(title)}</span>
+        <span class="dashboard-section-preview">${summaryHtml}</span>
+      </summary>
+      <div class="dashboard-section-detail">${detailHtml}</div>
+    </details>
+  `;
+}
+
+function buildConversacionesSectionPanel(dashboard, isGeneral) {
+  const c = dashboard.conversations;
+  const summaryHtml = `${c.total_escalated} escaladas · ${c.pending_now} pendientes · ${c.resolved} resueltas`;
+  const byDependenciaHtml = isGeneral
+    ? `
+      <div class="dashboard-tables">
+        <div class="dashboard-table-card" id="panel-dashboard-by-dependencia-card">
+          <h4>Conversaciones por dependencia</h4>
+          <table class="data-table">
+            <thead><tr><th>Dependencia</th><th>Conversaciones</th></tr></thead>
+            <tbody id="panel-dashboard-by-dependencia-body"></tbody>
+          </table>
+        </div>
+      </div>
+    `
+    : "";
+  const detailHtml = `
+    <div class="dashboard-cards">
+      ${dashboardCardHtml("Escaladas en los últimos 7 días", c.last_7_days)}
+      ${dashboardCardHtml("Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes))}
+      ${dashboardCardHtml("Resolución (promedio)", formatMinutes(c.avg_resolution_minutes))}
+    </div>
+    <div class="dashboard-charts">
+      <div class="dashboard-chart-card">
+        <h4>Conversaciones escaladas por día (últimos 30 días)</h4>
+        <canvas id="panel-dashboard-conversations-chart"></canvas>
+      </div>
+    </div>
+    ${byDependenciaHtml}
+  `;
+  return { title: "Conversaciones", summaryHtml, detailHtml };
+}
+
+function buildDocumentosSectionPanel(documents) {
+  const summaryHtml = `${documents.total} documentos · ${formatSize(documents.total_size_bytes)}`;
+  const detailHtml = `
+    <div class="dashboard-tables">
+      <div class="dashboard-table-card">
+        <h4>Documentos recientes</h4>
+        <table class="data-table">
+          <thead><tr><th>Archivo</th><th>Actualizado</th></tr></thead>
+          <tbody id="panel-dashboard-recent-documents-body"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  return { title: "Documentos", summaryHtml, detailHtml };
+}
+
+function buildFaqSectionPanel(faq) {
+  const summaryHtml = `${faq.pending} pendientes · ${faq.accepted} aceptadas · ${faq.rejected} rechazadas`;
+  return { title: "Preguntas frecuentes", summaryHtml, detailHtml: "" };
+}
+
+function renderDashboardSections(dashboard, isGeneral) {
+  const sections = [
+    buildConversacionesSectionPanel(dashboard, isGeneral),
+    buildDocumentosSectionPanel(dashboard.documents),
+    buildFaqSectionPanel(dashboard.faq),
+  ];
+
+  document.getElementById("panel-dashboard-sections").innerHTML = sections
+    .map((s) => dashboardSectionHtml(s.title, s.summaryHtml, s.detailHtml))
+    .join("");
 }
 
 function renderDashboardChart(dashboard) {
@@ -303,11 +376,10 @@ async function loadDashboard() {
   document.getElementById("panel-dashboard-title").textContent = isGeneral
     ? "Dashboard"
     : `Dashboard de ${dependenciaNameById(getAdminDependenciaId())}`;
-  document.getElementById("panel-dashboard-cards").innerHTML = dashboardCardsHtml(dashboard);
+  document.getElementById("panel-dashboard-summary").innerHTML = dashboardSummaryHtml(dashboard);
+  renderDashboardSections(dashboard, isGeneral);
   renderDashboardChart(dashboard);
 
-  const byDependenciaCard = document.getElementById("panel-dashboard-by-dependencia-card");
-  byDependenciaCard.hidden = !isGeneral;
   if (isGeneral) renderDashboardByDependenciaTable(dashboard);
 
   renderDashboardRecentDocumentsTable(dashboard);

@@ -616,60 +616,178 @@ function formatMinutes(minutes) {
   return `${(minutes / 60).toFixed(1)} h`;
 }
 
-function dashboardCardHtml(label, value) {
+function dashboardCardHtml(label, value, extraClass) {
   return `
-    <div class="dashboard-card">
+    <div class="dashboard-card${extraClass ? " " + extraClass : ""}">
       <span class="dashboard-card-value">${value}</span>
       <span class="dashboard-card-label">${escapeHtml(label)}</span>
     </div>
   `;
 }
 
-function dashboardCardsHtml(dashboard) {
+function dashboardSummaryHtml(dashboard) {
   const c = dashboard.conversations;
   const d = dashboard.documents;
   const f = dashboard.faq;
   const cards = [
-    ["Conversaciones escaladas", c.total_escalated],
-    ["Resueltas", c.resolved],
     ["Pendientes ahora", c.pending_now],
-    ["Escaladas en los últimos 7 días", c.last_7_days],
+    ["Conversaciones escaladas", c.total_escalated],
     ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
-    ["Resolución (promedio)", formatMinutes(c.avg_resolution_minutes)],
     ["Documentos indexados", d.total],
-    ["Tamaño total de documentos", formatSize(d.total_size_bytes)],
     ["FAQ pendientes por revisar", f.pending],
-    ["FAQ aceptadas", f.accepted],
   ];
+  return cards.map(([label, value]) => dashboardCardHtml(label, value, "dashboard-card-hero")).join("");
+}
 
-  if (dashboard.admin_team) {
-    cards.push(["Dependencias activas", dashboard.admin_team.dependencias_count]);
-    cards.push(["Administradores activos", dashboard.admin_team.admins_active]);
-  }
-  if (dashboard.performance) {
-    cards.push([
-      "Tiempo de respuesta del bot (promedio)",
-      dashboard.performance.avg_total_ms != null ? `${dashboard.performance.avg_total_ms} ms` : "—",
-    ]);
-    cards.push([
-      "Respuestas servidas desde caché",
-      dashboard.performance.cache_hit_rate != null
-        ? `${dashboard.performance.cache_hits} (${dashboard.performance.cache_hit_rate}%)`
-        : dashboard.performance.cache_hits,
-    ]);
-    cards.push(["Llamadas a Groq (total)", dashboard.performance.groq_calls_total]);
-    cards.push(["Llamadas a Groq (últimos 7 días)", dashboard.performance.groq_calls_last_7_days]);
-    cards.push(["Llamadas a Groq fallidas", dashboard.performance.groq_calls_failed]);
-  }
-  if (dashboard.feedback) {
-    cards.push(["Respuestas útiles (👍)", dashboard.feedback.up]);
-    cards.push([
-      "Respuestas no útiles (👎)",
-      dashboard.feedback.down_rate != null ? `${dashboard.feedback.down}  (${dashboard.feedback.down_rate}%)` : dashboard.feedback.down,
-    ]);
-  }
+function dashboardSectionHtml(title, summaryHtml, detailHtml) {
+  return `
+    <details class="dashboard-section">
+      <summary>
+        <span class="dashboard-section-title">${escapeHtml(title)}</span>
+        <span class="dashboard-section-preview">${summaryHtml}</span>
+      </summary>
+      <div class="dashboard-section-detail">${detailHtml}</div>
+    </details>
+  `;
+}
 
-  return cards.map(([label, value]) => dashboardCardHtml(label, value)).join("");
+function buildConversacionesSection(dashboard) {
+  const c = dashboard.conversations;
+  const summaryHtml = `${c.total_escalated} escaladas · ${c.pending_now} pendientes · ${c.resolved} resueltas`;
+  const detailHtml = `
+    <div class="dashboard-cards">
+      ${dashboardCardHtml("Escaladas en los últimos 7 días", c.last_7_days)}
+      ${dashboardCardHtml("Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes))}
+      ${dashboardCardHtml("Resolución (promedio)", formatMinutes(c.avg_resolution_minutes))}
+    </div>
+    <div class="dashboard-charts">
+      <div class="dashboard-chart-card">
+        <h3>Conversaciones escaladas por día (últimos 30 días)</h3>
+        <canvas id="dashboard-conversations-chart"></canvas>
+      </div>
+    </div>
+    <div class="dashboard-tables">
+      <div class="dashboard-table-card">
+        <h3>Conversaciones por dependencia</h3>
+        <table class="data-table">
+          <thead><tr><th>Dependencia</th><th>Conversaciones</th></tr></thead>
+          <tbody id="dashboard-by-dependencia-body"></tbody>
+        </table>
+        <p id="dashboard-by-dependencia-empty" class="empty-hint" hidden>Todavía no hay conversaciones escaladas.</p>
+      </div>
+    </div>
+  `;
+  return { title: "Conversaciones", summaryHtml, detailHtml };
+}
+
+function buildDocumentosSection(documents) {
+  const summaryHtml = `${documents.total} documentos · ${formatSize(documents.total_size_bytes)}`;
+  const detailHtml = `
+    <div class="dashboard-tables">
+      <div class="dashboard-table-card">
+        <h3>Documentos recientes</h3>
+        <table class="data-table">
+          <thead><tr><th>Archivo</th><th>Actualizado</th></tr></thead>
+          <tbody id="dashboard-recent-documents-body"></tbody>
+        </table>
+        <p id="dashboard-recent-documents-empty" class="empty-hint" hidden>Todavía no hay documentos indexados.</p>
+      </div>
+    </div>
+  `;
+  return { title: "Documentos", summaryHtml, detailHtml };
+}
+
+function buildFaqSection(faq) {
+  const summaryHtml = `${faq.pending} pendientes · ${faq.accepted} aceptadas · ${faq.rejected} rechazadas`;
+  return { title: "Preguntas frecuentes", summaryHtml, detailHtml: "" };
+}
+
+function buildEquipoSection(adminTeam) {
+  const summaryHtml = `${adminTeam.admins_active} administradores activos`;
+  const roleCards = Object.entries(adminTeam.admins_active_by_role || {})
+    .map(([role, count]) => dashboardCardHtml(`Activos - ${role.charAt(0).toUpperCase()}${role.slice(1)}`, count))
+    .join("");
+  const detailHtml = `
+    <div class="dashboard-cards">
+      ${dashboardCardHtml("Dependencias activas", adminTeam.dependencias_count)}
+      ${dashboardCardHtml("Administradores inactivos", adminTeam.admins_inactive)}
+      ${roleCards}
+    </div>
+  `;
+  return { title: "Equipo de administración", summaryHtml, detailHtml };
+}
+
+function buildRendimientoSection(performance) {
+  const summaryHtml = `${performance.avg_total_ms != null ? performance.avg_total_ms + " ms" : "—"} promedio · ${
+    performance.cache_hit_rate != null ? performance.cache_hit_rate + "% caché" : "—"
+  }`;
+  const detailHtml = `
+    <div class="dashboard-cards">
+      ${dashboardCardHtml("Recuperación (promedio)", performance.avg_retrieval_ms != null ? `${performance.avg_retrieval_ms} ms` : "—")}
+      ${dashboardCardHtml("Generación (promedio)", performance.avg_generation_ms != null ? `${performance.avg_generation_ms} ms` : "—")}
+      ${dashboardCardHtml(
+        "Respuestas servidas desde caché",
+        performance.cache_hit_rate != null ? `${performance.cache_hits} (${performance.cache_hit_rate}%)` : performance.cache_hits
+      )}
+      ${dashboardCardHtml("Llamadas a Groq (total)", performance.groq_calls_total)}
+      ${dashboardCardHtml("Llamadas a Groq (últimos 7 días)", performance.groq_calls_last_7_days)}
+      ${dashboardCardHtml("Llamadas a Groq fallidas", performance.groq_calls_failed)}
+    </div>
+    <div class="dashboard-charts">
+      <div class="dashboard-chart-card">
+        <h3>Llamadas a Groq por día (últimos 30 días)</h3>
+        <canvas id="dashboard-groq-chart"></canvas>
+      </div>
+    </div>
+  `;
+  return { title: "Rendimiento del sistema", summaryHtml, detailHtml };
+}
+
+function buildPreguntasSinRespuestaSection(unansweredQuestions) {
+  const count = (unansweredQuestions.top || []).length;
+  const summaryHtml = `${count} preguntas registradas`;
+  const detailHtml = `
+    <p class="panel-section-hint" style="margin: 0 0 10px;">
+      Lo que le falta a los documentos -- prioriza qué subir o completar.
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Pregunta</th><th>Veces</th><th>Última vez</th></tr></thead>
+      <tbody id="dashboard-unanswered-questions-body"></tbody>
+    </table>
+    <p id="dashboard-unanswered-questions-empty" class="empty-hint" hidden>No hay preguntas sin responder registradas.</p>
+  `;
+  return { title: "Preguntas sin respuesta suficiente", summaryHtml, detailHtml };
+}
+
+function buildFeedbackSection(feedback) {
+  const summaryHtml = `👍 ${feedback.up} · 👎 ${feedback.down}${feedback.down_rate != null ? ` (${feedback.down_rate}%)` : ""}`;
+  const detailHtml = `
+    <p class="panel-section-hint" style="margin: 0 0 10px;">
+      Respuestas que sí encontraron información, pero los estudiantes marcaron como no útil.
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Pregunta</th><th>👎</th></tr></thead>
+      <tbody id="dashboard-most-disliked-body"></tbody>
+    </table>
+    <p id="dashboard-most-disliked-empty" class="empty-hint" hidden>Todavía no hay respuestas calificadas como no útiles.</p>
+  `;
+  return { title: "Feedback de estudiantes", summaryHtml, detailHtml };
+}
+
+function renderDashboardSections(dashboard) {
+  const sections = [
+    buildConversacionesSection(dashboard),
+    buildDocumentosSection(dashboard.documents),
+    buildFaqSection(dashboard.faq),
+    dashboard.admin_team && buildEquipoSection(dashboard.admin_team),
+    dashboard.performance && buildRendimientoSection(dashboard.performance),
+    dashboard.unanswered_questions && buildPreguntasSinRespuestaSection(dashboard.unanswered_questions),
+    dashboard.feedback && buildFeedbackSection(dashboard.feedback),
+  ].filter(Boolean);
+
+  document.getElementById("dashboard-sections").innerHTML = sections
+    .map((s) => dashboardSectionHtml(s.title, s.summaryHtml, s.detailHtml))
+    .join("");
 }
 
 function trendChartConfig(trend, label, color) {
@@ -768,7 +886,8 @@ function renderDashboardMostDislikedTable(dashboard) {
 async function loadDashboard() {
   const res = await rootFetch("/api/dashboard");
   const dashboard = await res.json();
-  document.getElementById("dashboard-cards").innerHTML = dashboardCardsHtml(dashboard);
+  document.getElementById("dashboard-summary").innerHTML = dashboardSummaryHtml(dashboard);
+  renderDashboardSections(dashboard);
   renderDashboardCharts(dashboard);
   renderDashboardByDependenciaTable(dashboard);
   renderDashboardRecentDocumentsTable(dashboard);

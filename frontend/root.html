@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/root.css?v=17" />
+  <link rel="stylesheet" href="/static/root.css?v=18" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -56,57 +56,8 @@
           <h2>Dashboard</h2>
         </div>
         <p class="panel-section-hint">Resumen de lo más importante que ha sucedido en todo el sistema.</p>
-        <div id="dashboard-cards" class="dashboard-cards"></div>
-        <div class="dashboard-charts">
-          <div class="dashboard-chart-card">
-            <h3>Conversaciones escaladas por día (últimos 30 días)</h3>
-            <canvas id="dashboard-conversations-chart"></canvas>
-          </div>
-          <div class="dashboard-chart-card">
-            <h3>Llamadas a Groq por día (últimos 30 días)</h3>
-            <canvas id="dashboard-groq-chart"></canvas>
-          </div>
-        </div>
-        <div class="dashboard-tables">
-          <div class="dashboard-table-card">
-            <h3>Conversaciones por dependencia</h3>
-            <table class="data-table">
-              <thead><tr><th>Dependencia</th><th>Conversaciones</th></tr></thead>
-              <tbody id="dashboard-by-dependencia-body"></tbody>
-            </table>
-            <p id="dashboard-by-dependencia-empty" class="empty-hint" hidden>Todavía no hay conversaciones escaladas.</p>
-          </div>
-          <div class="dashboard-table-card">
-            <h3>Documentos recientes</h3>
-            <table class="data-table">
-              <thead><tr><th>Archivo</th><th>Actualizado</th></tr></thead>
-              <tbody id="dashboard-recent-documents-body"></tbody>
-            </table>
-            <p id="dashboard-recent-documents-empty" class="empty-hint" hidden>Todavía no hay documentos indexados.</p>
-          </div>
-          <div class="dashboard-table-card">
-            <h3>Preguntas sin respuesta suficiente</h3>
-            <p class="panel-section-hint" style="margin: 0 0 10px;">
-              Lo que le falta a los documentos -- prioriza qué subir o completar.
-            </p>
-            <table class="data-table">
-              <thead><tr><th>Pregunta</th><th>Veces</th><th>Última vez</th></tr></thead>
-              <tbody id="dashboard-unanswered-questions-body"></tbody>
-            </table>
-            <p id="dashboard-unanswered-questions-empty" class="empty-hint" hidden>No hay preguntas sin responder registradas.</p>
-          </div>
-          <div class="dashboard-table-card">
-            <h3>Preguntas peor calificadas (👎)</h3>
-            <p class="panel-section-hint" style="margin: 0 0 10px;">
-              Respuestas que sí encontraron información, pero los estudiantes marcaron como no útil.
-            </p>
-            <table class="data-table">
-              <thead><tr><th>Pregunta</th><th>👎</th></tr></thead>
-              <tbody id="dashboard-most-disliked-body"></tbody>
-            </table>
-            <p id="dashboard-most-disliked-empty" class="empty-hint" hidden>Todavía no hay respuestas calificadas como no útiles.</p>
-          </div>
-        </div>
+        <div id="dashboard-summary" class="dashboard-summary"></div>
+        <div id="dashboard-sections" class="dashboard-sections"></div>
       </section>
 
       <section id="tab-institucion" class="root-tab-panel" hidden>
@@ -291,6 +242,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="/static/root.js?v=23"></script>
+  <script src="/static/root.js?v=24"></script>
 </body>
 </html>

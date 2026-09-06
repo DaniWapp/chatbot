@@ -573,6 +573,110 @@ body {
   margin-top: 10px;
 }
 
+.dashboard-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.dashboard-card-hero {
+  padding: 18px 20px;
+}
+
+.dashboard-card-hero .dashboard-card-value {
+  font-size: 26px;
+}
+
+.dashboard-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.dashboard-section {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.dashboard-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.dashboard-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.dashboard-section summary::after {
+  content: "▾";
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.dashboard-section[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.dashboard-section[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-section-title {
+  flex-shrink: 0;
+}
+
+.dashboard-section-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.dashboard-section-detail {
+  padding: 16px 18px;
+}
+
+.dashboard-section-detail > .dashboard-charts:first-child,
+.dashboard-section-detail > .dashboard-tables:first-child {
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .dashboard-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-section summary {
+    padding: 12px 14px;
+  }
+
+  .dashboard-section-detail {
+    padding: 12px 14px;
+  }
+
+  .dashboard-section-detail .dashboard-charts,
+  .dashboard-section-detail .dashboard-tables {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- Preguntas frecuentes sugeridas --- */
 
 .faq-candidates-list {

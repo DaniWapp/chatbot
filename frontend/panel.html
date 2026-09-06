@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=45" />
+  <link rel="stylesheet" href="/static/panel.css?v=46" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -107,29 +107,8 @@
       <div class="panel-section-header">
         <h2 id="panel-dashboard-title">Dashboard</h2>
       </div>
-      <div id="panel-dashboard-cards" class="dashboard-cards"></div>
-      <div class="dashboard-charts">
-        <div class="dashboard-chart-card">
-          <h4>Conversaciones escaladas por día (últimos 30 días)</h4>
-          <canvas id="panel-dashboard-conversations-chart"></canvas>
-        </div>
-      </div>
-      <div class="dashboard-tables">
-        <div class="dashboard-table-card" id="panel-dashboard-by-dependencia-card" hidden>
-          <h4>Conversaciones por dependencia</h4>
-          <table class="data-table">
-            <thead><tr><th>Dependencia</th><th>Conversaciones</th></tr></thead>
-            <tbody id="panel-dashboard-by-dependencia-body"></tbody>
-          </table>
-        </div>
-        <div class="dashboard-table-card">
-          <h4>Documentos recientes</h4>
-          <table class="data-table">
-            <thead><tr><th>Archivo</th><th>Actualizado</th></tr></thead>
-            <tbody id="panel-dashboard-recent-documents-body"></tbody>
-          </table>
-        </div>
-      </div>
+      <div id="panel-dashboard-summary" class="dashboard-summary"></div>
+      <div id="panel-dashboard-sections" class="dashboard-sections"></div>
     </section>
 
     <section id="tab-documentos" class="panel-tab-panel" hidden>
@@ -233,6 +212,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/panel.js?v=47"></script>
+  <script src="/static/panel.js?v=48"></script>
 </body>
 </html>
