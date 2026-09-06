@@ -20,9 +20,14 @@ _rate_limiter = GroqRateLimiter(
     max_requests_per_minute=settings.GROQ_MAX_REQUESTS_PER_MINUTE,
     max_tokens_per_minute=settings.GROQ_MAX_TOKENS_PER_MINUTE,
 )
-
-
-_IMAGE_BLOCK_TOKEN_ESTIMATE = 2048  # cifra de https://console.groq.com/docs/vision
+# El modelo de visión tiene una cuota de cuenta propia, mucho más baja que
+# GROQ_MODEL (ver GROQ_VISION_MAX_TOKENS_PER_MINUTE) -- un solo limitador
+# compartido, calibrado para el modelo de texto, no la protege. _create_completion
+# elige cuál usar según el modelo de cada llamada.
+_vision_rate_limiter = GroqRateLimiter(
+    max_requests_per_minute=settings.GROQ_VISION_MAX_REQUESTS_PER_MINUTE,
+    max_tokens_per_minute=settings.GROQ_VISION_MAX_TOKENS_PER_MINUTE,
+)
 
 
 def _estimate_tokens(messages: List[dict], max_completion_tokens: int) -> int:
@@ -32,23 +37,11 @@ def _estimate_tokens(messages: List[dict], max_completion_tokens: int) -> int:
     de tokens de salida que se le pidió al modelo -- no se sabe cuántos usará
     realmente hasta que responde, así que se reserva el máximo posible.
 
-    content puede ser un string (texto plano, el caso normal) o una lista
-    de bloques (llamadas de visión: texto + image_url, ver
-    extract_text_from_image) -- un simple len() sobre la lista contaría
-    bloques, no caracteres, y subestimaría brutalmente el uso real."""
-    prompt_chars = 0
-    image_blocks = 0
-    for m in messages:
-        content = m.get("content") or ""
-        if isinstance(content, str):
-            prompt_chars += len(content)
-        else:
-            for block in content:
-                if block.get("type") == "text":
-                    prompt_chars += len(block.get("text", ""))
-                elif block.get("type") == "image_url":
-                    image_blocks += 1
-    return (prompt_chars // 4) + (image_blocks * _IMAGE_BLOCK_TOKEN_ESTIMATE) + max_completion_tokens
+    Solo se usa para el limitador principal (_rate_limiter), cuyo cupo es
+    de tokens totales por minuto. Las llamadas de visión no pasan por aquí
+    -- ver _create_completion."""
+    prompt_chars = sum(len(m.get("content") or "") for m in messages)
+    return (prompt_chars // 4) + max_completion_tokens
 
 
 def _create_completion(purpose: str, **kwargs):
@@ -60,9 +53,22 @@ def _create_completion(purpose: str, **kwargs):
     (distinto del limitador, que solo vive en memoria) para el dashboard de
     actividad -- ver app/services/dashboard_service.py. purpose identifica
     qué función llamó (p. ej. "generate_answer"), para poder desglosar el
-    uso por tipo de llamada."""
-    estimated_tokens = _estimate_tokens(kwargs.get("messages", []), kwargs.get("max_completion_tokens", 0))
-    _rate_limiter.acquire(estimated_tokens)
+    uso por tipo de llamada.
+
+    El modelo de visión usa su propio limitador (_vision_rate_limiter). Su
+    cuota real de cuenta (descubierta en vivo) es de tokens de SALIDA por
+    minuto, no de tokens totales -- por eso, a diferencia del limitador
+    principal, no se le suma la estimación de la imagen de entrada
+    (_IMAGE_BLOCK_TOKEN_ESTIMATE): contarla ahí haría que una sola llamada
+    ya superara todo el cupo y nunca pudiera pasar."""
+    is_vision = kwargs.get("model") == settings.GROQ_VISION_MODEL
+    if is_vision:
+        estimated_tokens = kwargs.get("max_completion_tokens", 0)
+        limiter = _vision_rate_limiter
+    else:
+        estimated_tokens = _estimate_tokens(kwargs.get("messages", []), kwargs.get("max_completion_tokens", 0))
+        limiter = _rate_limiter
+    limiter.acquire(estimated_tokens)
     client = get_client()
     try:
         result = client.chat.completions.create(**kwargs)

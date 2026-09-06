@@ -203,6 +203,16 @@ def _get_connection() -> sqlite3.Connection:
         # explícitamente el año de uno más viejo).
         _ensure_column(_connection, "document_dependencias", "vigente_desde", "TEXT")
 
+        # NULL = documento activo (indexado, participa en las búsquedas).
+        # Con valor (fecha ISO): el admin lo archivó a mano -- sale del
+        # índice FAISS pero el archivo y sus metadatos se conservan, es
+        # reversible ("Reactivar"). Nunca se fija automáticamente por
+        # antigüedad/vigencia: un documento "viejo" puede seguir siendo
+        # necesario para una parte de los usuarios (ej. un pénsum anterior
+        # todavía vigente para quienes ya lo cursan) -- solo un admin con
+        # criterio institucional puede decidir que ya no le sirve a nadie.
+        _ensure_column(_connection, "document_dependencias", "archived_at", "TEXT")
+
         # SHA-256 del contenido crudo tal como se subió (antes de cualquier
         # conversión) -- detecta el mismo archivo/imagen subido más de una
         # vez, sin importar con qué nombre, para no duplicar contenido en

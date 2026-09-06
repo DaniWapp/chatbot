@@ -97,6 +97,34 @@ def set_document_vigencia(filename: str, vigente_desde: Optional[str]) -> None:
         conn.commit()
 
 
+def get_document_archived_at(filename: str) -> Optional[str]:
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT archived_at FROM document_dependencias WHERE filename = ?", (filename,)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def set_document_archived_at(filename: str, archived_at: Optional[str]) -> None:
+    """NULL reactiva el documento (vuelve a participar en las búsquedas
+    tras reingestarlo). Con valor: momento en que el admin lo archivó a
+    mano -- ver app/api/routes.py::archive_document_route."""
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            """
+            INSERT INTO document_dependencias (filename, archived_at, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(filename) DO UPDATE SET
+                archived_at = excluded.archived_at,
+                updated_at = excluded.updated_at
+            """,
+            (filename, archived_at, _now()),
+        )
+        conn.commit()
+
+
 def find_document_by_hash(content_hash: str) -> Optional[dict]:
     with history.db_lock():
         conn = history.get_connection()

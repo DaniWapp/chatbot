@@ -38,7 +38,13 @@ class GroqRateLimiter:
         `estimated_tokens` tokens dentro de la ventana de 60s, según ambos
         límites (peticiones y tokens). Se reintenta en un bucle porque,
         tras dormir, otra llamada concurrente pudo haber tomado el cupo que
-        se liberó -- se vuelve a comprobar antes de reservar el turno."""
+        se liberó -- se vuelve a comprobar antes de reservar el turno.
+
+        Si una sola llamada ya pesa más que todo el cupo por minuto
+        (`estimated_tokens > max_tokens_per_minute`), nunca podría "caber"
+        aunque se espere para siempre -- eso encerraría este método en un
+        bucle infinito. En ese caso se deja pasar en cuanto el cupo esté
+        vacío, en vez de bloquear sin salida."""
         while True:
             with self._lock:
                 now = time.monotonic()
@@ -47,7 +53,8 @@ class GroqRateLimiter:
                 total_tokens = sum(tok for _, tok in self._entries)
                 fits_requests = total_requests < self._max_requests
                 fits_tokens = total_tokens + estimated_tokens <= self._max_tokens
-                if fits_requests and fits_tokens:
+                oversized = estimated_tokens > self._max_tokens and total_tokens == 0
+                if fits_requests and (fits_tokens or oversized):
                     self._entries.append((now, estimated_tokens))
                     return
                 oldest = self._entries[0][0] if self._entries else now

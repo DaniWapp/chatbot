@@ -215,28 +215,6 @@ def test_extract_text_from_image_strips_thinking_block(mock_get_client):
     assert "Analizando" not in result
 
 
-def test_estimate_tokens_handles_image_content_blocks():
-    """content puede ser una lista de bloques (llamada de visión) en vez de
-    un string -- un len() ingenuo sobre la lista contaría bloques (2), no
-    caracteres, y subestimaría brutalmente el uso real."""
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "a" * 100},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64,xxxx"}},
-            ],
-        }
-    ]
-
-    estimate = llm._estimate_tokens(messages, max_completion_tokens=0)
-
-    # 100 caracteres de texto (//4 = 25) + 2048 de la imagen, muy por
-    # encima de lo que daría contar bloques de contenido como si fueran caracteres.
-    assert estimate >= 2048 + 25
-    assert estimate < 3000
-
-
 def test_estimate_tokens_still_handles_plain_string_content():
     messages = [{"role": "user", "content": "a" * 400}]
 
@@ -267,3 +245,37 @@ def test_suggest_filename_from_text_returns_none_on_client_exception(mock_get_cl
     mock_get_client.side_effect = RuntimeError("groq caído")
 
     assert llm.suggest_filename_from_text("texto cualquiera") is None
+
+
+# --- Limitador de tasa propio para el modelo de visión (app/rag/llm.py) ---
+
+
+@patch("app.rag.llm.get_client")
+def test_vision_model_call_uses_vision_rate_limiter(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning("texto extraído")
+
+    with (
+        patch.object(llm._vision_rate_limiter, "acquire") as mock_vision_acquire,
+        patch.object(llm._rate_limiter, "acquire") as mock_main_acquire,
+    ):
+        llm.extract_text_from_image(b"contenido falso de imagen", ".jpg")
+
+    # La cuota de visión es de tokens de SALIDA por minuto -- la imagen de
+    # entrada no debe sumarse, o una sola llamada ya superaría todo el cupo
+    # (ver rate_limiter.py::GroqRateLimiter.acquire) y nunca podría pasar.
+    mock_vision_acquire.assert_called_once_with(settings.GROQ_VISION_MAX_COMPLETION_TOKENS)
+    mock_main_acquire.assert_not_called()
+
+
+@patch("app.rag.llm.get_client")
+def test_text_model_call_uses_main_rate_limiter(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning('{"filename": "nombre"}')
+
+    with (
+        patch.object(llm._vision_rate_limiter, "acquire") as mock_vision_acquire,
+        patch.object(llm._rate_limiter, "acquire") as mock_main_acquire,
+    ):
+        llm.suggest_filename_from_text("texto cualquiera")
+
+    mock_main_acquire.assert_called_once()
+    mock_vision_acquire.assert_not_called()

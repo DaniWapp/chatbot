@@ -770,6 +770,23 @@ function renderDocumentsTable() {
 
   for (const doc of filteredDocuments) {
     const tr = document.createElement("tr");
+    if (doc.archived_at) {
+      tr.innerHTML = `
+        <td>${escapeHtml(doc.filename)} <span class="archived-badge">Archivado</span></td>
+        <td>${formatSize(doc.size_bytes)}</td>
+        <td>${escapeHtml(dependenciaLabelFor(doc.dependencia_id))}</td>
+        <td>${escapeHtml(doc.vigente_desde || "")}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" class="reactivate-button">Reactivar</button>
+          </div>
+        </td>
+      `;
+      tr.querySelector(".reactivate-button").addEventListener("click", () => reactivateDocument(doc));
+      tbody.appendChild(tr);
+      continue;
+    }
+
     tr.innerHTML = `
       <td>${escapeHtml(doc.filename)}</td>
       <td>${formatSize(doc.size_bytes)}</td>
@@ -778,6 +795,7 @@ function renderDocumentsTable() {
       <td>
         <div class="row-actions">
           <button type="button" class="preview-button">Vista previa</button>
+          <button type="button" class="archive-button">Archivar</button>
           <button type="button" class="danger delete-button">Eliminar</button>
         </div>
       </td>
@@ -792,6 +810,7 @@ function renderDocumentsTable() {
       recategorizeDocument(doc, { vigenteDesde: vigenciaInput.value || null });
     });
     tr.querySelector(".preview-button").addEventListener("click", () => previewDocument(doc.filename, "/api/root/documents"));
+    tr.querySelector(".archive-button").addEventListener("click", () => archiveDocument(doc));
     tr.querySelector(".delete-button").addEventListener("click", () => deleteDocument(doc));
     tbody.appendChild(tr);
   }
@@ -851,6 +870,40 @@ async function deleteDocument(doc) {
   if (!confirm(`¿Eliminar "${doc.filename}"? También se quita del índice.`)) return;
   try {
     const res = await rootFetch(`/api/root/documents/${encodeURIComponent(doc.filename)}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert(await errorDetail(res));
+      return;
+    }
+    await loadDocuments();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+}
+
+async function archiveDocument(doc) {
+  if (
+    !confirm(
+      `¿Archivar "${doc.filename}"? Deja de responder preguntas hasta que lo reactives, pero el archivo se conserva.`
+    )
+  )
+    return;
+  try {
+    const res = await rootFetch(`/api/root/documents/${encodeURIComponent(doc.filename)}/archive`, { method: "PUT" });
+    if (!res.ok) {
+      alert(await errorDetail(res));
+      return;
+    }
+    await loadDocuments();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+}
+
+async function reactivateDocument(doc) {
+  try {
+    const res = await rootFetch(`/api/root/documents/${encodeURIComponent(doc.filename)}/reactivate`, {
+      method: "PUT",
+    });
     if (!res.ok) {
       alert(await errorDetail(res));
       return;

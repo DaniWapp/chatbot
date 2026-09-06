@@ -226,6 +226,7 @@ class DocumentInfo(BaseModel):
     size_bytes: int
     dependencia_id: Optional[int] = None
     vigente_desde: Optional[str] = None
+    archived_at: Optional[str] = None
 
 
 class DocumentRecategorizeRequest(BaseModel):

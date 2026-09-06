@@ -908,6 +908,7 @@ def _list_documents() -> List[DocumentInfo]:
             size_bytes=path.stat().st_size,
             dependencia_id=ingest_service.get_document_dependencia(path.name),
             vigente_desde=ingest_service.get_document_vigencia(path.name),
+            archived_at=ingest_service.get_document_archived_at(path.name),
         )
         for path in paths
     ]
@@ -1176,6 +1177,34 @@ def _delete_document(filename: str) -> None:
     vector_store.remove_document(safe_name)
 
 
+def _archive_document(filename: str) -> None:
+    """Saca un documento del índice de búsqueda sin borrar el archivo ni
+    sus metadatos (dependencia, vigencia) -- reversible con
+    _reactivate_document. Siempre es una acción manual del admin: nunca se
+    dispara automáticamente por antigüedad ni por vigencia, porque un
+    documento "viejo" puede seguir siendo necesario para una parte de los
+    usuarios (ej. un pénsum anterior, todavía vigente para quienes ya lo
+    cursan) -- solo un admin con criterio institucional puede decidir que
+    ya no le sirve a nadie."""
+    safe_name = Path(filename).name
+    path = settings.DOCUMENTS_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No existe ese documento.")
+    vector_store.remove_document(safe_name)
+    ingest_service.set_document_archived_at(safe_name, ingest_service._now())
+
+
+def _reactivate_document(filename: str) -> IngestResponse:
+    safe_name = Path(filename).name
+    path = settings.DOCUMENTS_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No existe ese documento.")
+    ingest_service.set_document_archived_at(safe_name, None)
+    dependencia_id = ingest_service.get_document_dependencia(safe_name)
+    result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
+    return _ingest_result_to_response(result)
+
+
 _PREVIEW_MAX_CHARS = 5000
 
 
@@ -1243,6 +1272,19 @@ def delete_document_route(filename: str) -> IngestResponse:
     return IngestResponse(status="ok", documents_processed=0, chunks_created=0, errors=[])
 
 
+@router.put("/root/documents/{filename}/archive", dependencies=[Depends(require_root)])
+def archive_document_route(filename: str) -> dict:
+    _archive_document(filename)
+    return {"status": "ok"}
+
+
+@router.put(
+    "/root/documents/{filename}/reactivate", response_model=IngestResponse, dependencies=[Depends(require_root)]
+)
+def reactivate_document_route(filename: str) -> IngestResponse:
+    return _reactivate_document(filename)
+
+
 @router.get(
     "/root/documents/{filename}/preview", response_model=DocumentPreviewResponse, dependencies=[Depends(require_root)]
 )
@@ -1302,6 +1344,28 @@ def recategorize_document_for_panel(
     if identity.role != "general":
         raise HTTPException(status_code=403, detail="Solo el administrador general puede recategorizar documentos.")
     return _recategorize_document(filename, payload.dependencia_id, payload.vigente_desde)
+
+
+@router.put("/admin/documents/{filename}/archive", dependencies=[Depends(require_conversation_admin)])
+def archive_document_for_panel(filename: str, identity: AdminIdentity = Depends(require_conversation_admin)) -> dict:
+    """Igual que recategorizar: archivar es una decisión de criterio
+    institucional, fuera del alcance aprobado para administradores de
+    dependencia."""
+    _require_general(identity)
+    _archive_document(filename)
+    return {"status": "ok"}
+
+
+@router.put(
+    "/admin/documents/{filename}/reactivate",
+    response_model=IngestResponse,
+    dependencies=[Depends(require_conversation_admin)],
+)
+def reactivate_document_for_panel(
+    filename: str, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> IngestResponse:
+    _require_general(identity)
+    return _reactivate_document(filename)
 
 
 @router.delete(

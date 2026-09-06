@@ -8,10 +8,12 @@ from unittest.mock import patch
 from app.services.ingest_service import (
     delete_document_hash_by_filename,
     find_document_by_hash,
+    get_document_archived_at,
     get_document_dependencia,
     get_document_vigencia,
     record_document_hash,
     run_ingestion,
+    set_document_archived_at,
     set_document_dependencia,
     set_document_vigencia,
 )
@@ -138,3 +140,33 @@ def test_delete_document_hash_by_filename_removes_the_lookup():
     delete_document_hash_by_filename("documento-b.txt")
 
     assert find_document_by_hash("hash-test-b") is None
+
+
+# --- Archivado manual (ver app/api/routes.py::_archive_document) ---
+
+
+def test_document_archived_at_defaults_to_none():
+    assert get_document_archived_at("archive-test-sin-archivar.txt") is None
+
+
+def test_set_and_get_document_archived_at():
+    set_document_archived_at("archive-test-a.txt", "2026-09-06T00:00:00+00:00")
+
+    assert get_document_archived_at("archive-test-a.txt") == "2026-09-06T00:00:00+00:00"
+
+
+def test_set_document_archived_at_none_reactivates():
+    set_document_archived_at("archive-test-b.txt", "2026-09-06T00:00:00+00:00")
+
+    set_document_archived_at("archive-test-b.txt", None)
+
+    assert get_document_archived_at("archive-test-b.txt") is None
+
+
+def test_set_document_archived_at_does_not_clobber_vigencia():
+    set_document_vigencia("archive-test-c.txt", "2026-01-01")
+
+    set_document_archived_at("archive-test-c.txt", "2026-09-06T00:00:00+00:00")
+
+    assert get_document_vigencia("archive-test-c.txt") == "2026-01-01"
+    assert get_document_archived_at("archive-test-c.txt") == "2026-09-06T00:00:00+00:00"

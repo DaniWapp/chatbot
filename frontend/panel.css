@@ -1088,6 +1088,20 @@ body {
   background: #fef2f2;
 }
 
+.archived-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint, #9b9a97);
+  background: var(--bg, #fbfbfa);
+  border: 1px solid var(--border, #ebebea);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 6px;
+}
+
 .empty-hint {
   margin-top: 16px;
   font-size: 13px;

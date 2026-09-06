@@ -38,6 +38,13 @@ class Settings:
     # razonamiento: su bloque <think> también cuenta como tokens de salida,
     # así que el margen real es más chico de lo que parece.
     GROQ_VISION_MAX_COMPLETION_TOKENS: int = _get_int("GROQ_VISION_MAX_COMPLETION_TOKENS", 700)
+    # Límite de tasa PROPIO para el modelo de visión -- el limitador
+    # general (GROQ_MAX_REQUESTS_PER_MINUTE/GROQ_MAX_TOKENS_PER_MINUTE, más
+    # abajo) está calibrado para GROQ_MODEL y no protege contra la cuota,
+    # mucho más baja, del modelo de visión (ver GROQ_VISION_MAX_COMPLETION_TOKENS).
+    # 900 deja margen bajo el límite real de 1000 confirmado en vivo.
+    GROQ_VISION_MAX_REQUESTS_PER_MINUTE: int = _get_int("GROQ_VISION_MAX_REQUESTS_PER_MINUTE", 10)
+    GROQ_VISION_MAX_TOKENS_PER_MINUTE: int = _get_int("GROQ_VISION_MAX_TOKENS_PER_MINUTE", 900)
     # Límite real del plan gratuito para openai/gpt-oss-20b: 30 peticiones/min
     # y 8000 tokens/min (ver https://console.groq.com/docs/rate-limits). Se
     # opera por debajo de eso a propósito -- deja margen para picos breves,

@@ -340,6 +340,26 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
 
   return filtered
     .map((doc) => {
+      const nameCell = doc.archived_at
+        ? `${escapeHtml(doc.filename)} <span class="archived-badge">Archivado</span>`
+        : escapeHtml(doc.filename);
+
+      if (doc.archived_at && isGeneral) {
+        return `
+          <tr>
+            <td>${nameCell}</td>
+            <td>${formatSize(doc.size_bytes)}</td>
+            <td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>
+            <td>${escapeHtml(doc.vigente_desde || "")}</td>
+            <td>
+              <div class="row-actions">
+                <button type="button" class="reactivate-doc-button" data-filename="${escapeHtml(doc.filename)}">Reactivar</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
       const depCell = isGeneral ? `<td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>` : "";
       const recategorizeControl = isGeneral
         ? `<select class="doc-dependencia-select" data-filename="${escapeHtml(doc.filename)}">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select>`
@@ -347,9 +367,12 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
       const vigenciaCell = isGeneral
         ? `<td><input type="date" class="doc-vigencia-input" data-filename="${escapeHtml(doc.filename)}" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>`
         : "";
+      const archiveControl = isGeneral
+        ? `<button type="button" class="archive-doc-button" data-filename="${escapeHtml(doc.filename)}">Archivar</button>`
+        : "";
       return `
         <tr>
-          <td>${escapeHtml(doc.filename)}</td>
+          <td>${nameCell}</td>
           <td>${formatSize(doc.size_bytes)}</td>
           ${depCell}
           ${vigenciaCell}
@@ -357,6 +380,7 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
             <div class="row-actions">
               ${recategorizeControl}
               <button type="button" class="preview-doc-button" data-filename="${escapeHtml(doc.filename)}">Vista previa</button>
+              ${archiveControl}
               <button type="button" class="danger delete-doc-button" data-filename="${escapeHtml(doc.filename)}">Eliminar</button>
             </div>
           </td>
@@ -388,6 +412,12 @@ function rerenderPanelDocumentsTable(isGeneral) {
       input.addEventListener("change", () => {
         recategorizePanelDocument(input.dataset.filename, { vigenteDesde: input.value || null });
       });
+    });
+    tbody.querySelectorAll(".archive-doc-button").forEach((button) => {
+      button.addEventListener("click", () => archivePanelDocument(button.dataset.filename));
+    });
+    tbody.querySelectorAll(".reactivate-doc-button").forEach((button) => {
+      button.addEventListener("click", () => reactivatePanelDocument(button.dataset.filename));
     });
   }
 }
@@ -583,6 +613,29 @@ async function deletePanelDocument(filename) {
       alert(await errorDetail(res));
       return;
     }
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  } finally {
+    await loadDocuments();
+  }
+}
+
+async function archivePanelDocument(filename) {
+  if (!confirm(`¿Archivar "${filename}"? Deja de responder preguntas hasta que lo reactives, pero el archivo se conserva.`)) return;
+  try {
+    const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}/archive`, { method: "PUT" });
+    if (!res.ok) alert(await errorDetail(res));
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  } finally {
+    await loadDocuments();
+  }
+}
+
+async function reactivatePanelDocument(filename) {
+  try {
+    const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}/reactivate`, { method: "PUT" });
+    if (!res.ok) alert(await errorDetail(res));
   } catch {
     // adminFetch ya maneja el caso de sesión inválida.
   } finally {

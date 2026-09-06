@@ -664,6 +664,99 @@ def test_delete_document_also_deletes_stored_original(tmp_path, monkeypatch):
     assert not (originals_dir / "Manual.docx").exists()
 
 
+# --- Archivado manual (ver app/api/routes.py::_archive_document) ---
+
+
+def test_archive_document_removes_from_index_keeps_file(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+    (tmp_path / "PensumViejo.txt").write_text("contenido del pensum anterior", encoding="utf-8")
+
+    with patch("app.services.ingest_service.vector_store.remove_document") as mock_remove:
+        res = client.put("/api/root/documents/PensumViejo.txt/archive", headers=_auth(token))
+
+    assert res.status_code == 200
+    mock_remove.assert_called_once_with("PensumViejo.txt")
+    # El archivo se conserva -- archivar no es borrar.
+    assert (tmp_path / "PensumViejo.txt").exists()
+
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "PensumViejo.txt")
+    assert doc["archived_at"] is not None
+
+
+def test_archive_missing_document_returns_404(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    res = client.put("/api/root/documents/NoExiste.txt/archive", headers=_auth(token))
+
+    assert res.status_code == 404
+
+
+def test_reactivate_document_reingests_and_clears_archived_at(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+    (tmp_path / "PensumViejo.txt").write_text("contenido del pensum anterior", encoding="utf-8")
+
+    with patch("app.services.ingest_service.vector_store.remove_document"):
+        client.put("/api/root/documents/PensumViejo.txt/archive", headers=_auth(token))
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        res = client.put("/api/root/documents/PensumViejo.txt/reactivate", headers=_auth(token))
+
+    assert res.status_code == 200
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "PensumViejo.txt")
+    assert doc["archived_at"] is None
+
+
+def test_dependencia_admin_cannot_archive_or_reactivate_via_panel(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    (tmp_path / "Compartido.txt").write_text("contenido", encoding="utf-8")
+    root_token = _login_as()
+    dep = client.post(
+        "/api/root/dependencias", json={"name": "Dep Archivado Test", "description": "desc"}, headers=_auth(root_token)
+    ).json()
+    dep_token = _login_as(role="dependencia", dependencia_id=dep["id"])
+
+    assert client.put("/api/admin/documents/Compartido.txt/archive", headers=_auth(dep_token)).status_code == 403
+    assert client.put("/api/admin/documents/Compartido.txt/reactivate", headers=_auth(dep_token)).status_code == 403
+
+
+def test_general_admin_can_archive_and_reactivate_via_panel(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    (tmp_path / "Compartido.txt").write_text("contenido", encoding="utf-8")
+    general_token = _login_as(role="general")
+
+    with patch("app.services.ingest_service.vector_store.remove_document"):
+        archive_res = client.put("/api/admin/documents/Compartido.txt/archive", headers=_auth(general_token))
+    assert archive_res.status_code == 200
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        reactivate_res = client.put("/api/admin/documents/Compartido.txt/reactivate", headers=_auth(general_token))
+    assert reactivate_res.status_code == 200
+
+
 # --- Imágenes como documento (ver app/rag/llm.py::extract_text_from_image) ---
 
 
