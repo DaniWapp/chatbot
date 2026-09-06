@@ -203,6 +203,20 @@ def _get_connection() -> sqlite3.Connection:
         # explícitamente el año de uno más viejo).
         _ensure_column(_connection, "document_dependencias", "vigente_desde", "TEXT")
 
+        # SHA-256 del contenido crudo tal como se subió (antes de cualquier
+        # conversión) -- detecta el mismo archivo/imagen subido más de una
+        # vez, sin importar con qué nombre, para no duplicar contenido en
+        # el índice (ver app/services/ingest_service.py::find_document_by_hash).
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_hashes (
+                content_hash TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         # Propuestas de preguntas frecuentes generadas automáticamente al
         # resolver una conversación escalada (ver
         # app/services/faq_service.py). status: 'pending' | 'accepted' | 'rejected'.

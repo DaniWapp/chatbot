@@ -1,7 +1,9 @@
 """Rutas de la API: /api/chat (síncrono y streaming), /api/ingest, /api/health,
 /api/admin/sessions (panel de control), /api/escalate (pedir un asesor humano)."""
+import hashlib
 import json
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -951,6 +953,46 @@ def _find_stored_original(txt_filename: str) -> Optional[Path]:
     return None
 
 
+# Nombres genéricos típicos de fotos/capturas (WhatsApp, cámara del
+# celular, captura de pantalla) que no dicen nada del contenido -- cuando
+# coinciden, se le sugiere al administrador un nombre mejor a partir del
+# texto ya extraído (ver llm.py::suggest_filename_from_text). Nunca se
+# renombra "a la fuerza": es solo una sugerencia editable.
+_GENERIC_FILENAME_PATTERNS = [
+    re.compile(r"^img[-_]?\d+", re.IGNORECASE),
+    re.compile(r"^vid[-_]?\d+", re.IGNORECASE),
+    re.compile(r"^dsc[-_]?\d+", re.IGNORECASE),
+    re.compile(r"^screenshot", re.IGNORECASE),
+    re.compile(r"^captura", re.IGNORECASE),
+    re.compile(r"^photo[-_]?\d+", re.IGNORECASE),
+    re.compile(r"^whatsapp\s*image", re.IGNORECASE),
+    re.compile(r"^image\d*$", re.IGNORECASE),
+    re.compile(r"^\d{8}[-_]\d+$"),  # solo fecha+número, sin ninguna palabra
+]
+
+
+def _looks_like_generic_filename(stem: str) -> bool:
+    stem = stem.strip()
+    return any(p.match(stem) for p in _GENERIC_FILENAME_PATTERNS)
+
+
+_UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def _sanitize_filename_stem(raw_stem: str) -> str:
+    """Convierte un nombre sugerido/elegido por el admin en un stem seguro
+    para el sistema de archivos: descarta separadores de ruta, reemplaza
+    caracteres no válidos, y recorta a un largo razonable."""
+    stem = Path(raw_stem.strip()).name  # descarta cualquier separador de ruta
+    stem = _UNSAFE_FILENAME_CHARS.sub("-", stem).strip()
+    return stem[:150]
+
+
+def _find_duplicate_document(content: bytes) -> Optional[dict]:
+    content_hash = hashlib.sha256(content).hexdigest()
+    return ingest_service.find_document_by_hash(content_hash)
+
+
 def _extract_image_text(content: bytes, raw_filename: str) -> str:
     """Llama al modelo de visión de Groq para extraer el texto de una
     imagen -- de solo lectura, no escribe nada en disco ni en el índice.
@@ -970,14 +1012,32 @@ def _extract_image_text(content: bytes, raw_filename: str) -> str:
         raise HTTPException(status_code=502, detail=f"No se pudo extraer el texto de la imagen: {exc}") from exc
 
 
-def _finalize_converted_document(original_path: Path, ext: str, extracted_text: str) -> str:
+def _build_extract_image_response(content: bytes, raw_filename: str) -> dict:
+    """Arma la respuesta completa del endpoint de extracción: el texto, un
+    nombre sugerido (solo si el nombre subido es genérico, ver
+    _looks_like_generic_filename) y un aviso temprano -- no bloqueante --
+    si el contenido ya está subido (ver _find_duplicate_document). El
+    bloqueo real de duplicados ocurre en _upload_document, que cubre
+    también PDF/DOCX/XLSX/TXT."""
+    text = _extract_image_text(content, raw_filename)
+    stem = Path(raw_filename).stem
+    suggested_filename = llm.suggest_filename_from_text(text) if _looks_like_generic_filename(stem) else None
+    return {"text": text, "suggested_filename": suggested_filename, "duplicate": _find_duplicate_document(content)}
+
+
+def _finalize_converted_document(
+    original_path: Path, ext: str, extracted_text: str, desired_stem: Optional[str] = None
+) -> str:
     """Último tramo compartido entre PDF/DOCX (texto extraído
     automáticamente) e imágenes (texto ya revisado por el administrador):
     elige un nombre .txt libre, lo escribe, y mueve el original a
     DOCUMENT_ORIGINALS_DIR con ese mismo stem -- así _find_stored_original
     lo encuentra sin ambigüedad, incluso si hubo que agregarle un "(2)"
-    anti-colisión."""
-    final_filename = _next_available_txt_name(original_path.stem)
+    anti-colisión. desired_stem (ya sanitizado por el llamador) reemplaza
+    el nombre del archivo subido -- ej. un nombre sugerido por IA para una
+    foto con nombre genérico, o uno elegido a mano por el administrador."""
+    stem = desired_stem or original_path.stem
+    final_filename = _next_available_txt_name(stem)
     (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
     settings.DOCUMENT_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
     stored_original_path = settings.DOCUMENT_ORIGINALS_DIR / f"{Path(final_filename).stem}{ext}"
@@ -1006,6 +1066,7 @@ def _upload_document(
     dependencia_id: Optional[int],
     vigente_desde: Optional[str] = None,
     extracted_text: Optional[str] = None,
+    desired_filename: Optional[str] = None,
 ) -> IngestResponse:
     """Sube un documento a DOCUMENTS_DIR, lo etiqueta con una dependencia
     (None -- general/compartido) y lo ingesta de forma incremental: solo se
@@ -1019,7 +1080,11 @@ def _upload_document(
     extract_text_from_image) y revisado/corregido por el administrador --
     nunca se llama a Groq desde aquí. En ambos casos el original se mueve a
     DOCUMENT_ORIGINALS_DIR, fuera del alcance de la ingesta (ver
-    _finalize_converted_document y _find_stored_original)."""
+    _finalize_converted_document y _find_stored_original).
+
+    Rechaza con 409 si el CONTENIDO (no el nombre) ya se subió antes -- ver
+    ingest_service.find_document_by_hash -- para no duplicar el mismo
+    documento/imagen en el índice bajo un nombre distinto."""
     filename = Path(raw_filename).name  # descarta cualquier ruta de directorio en el nombre
     ext = Path(filename).suffix.lower()
     if ext not in settings.ALLOWED_EXTENSIONS and ext not in _IMAGE_EXTENSIONS:
@@ -1029,6 +1094,19 @@ def _upload_document(
         raise HTTPException(
             status_code=400, detail=f"El archivo supera el tamaño máximo ({settings.MAX_FILE_SIZE_MB} MB)."
         )
+
+    content_hash = hashlib.sha256(content).hexdigest()
+    duplicate = ingest_service.find_document_by_hash(content_hash)
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f'Este archivo ya está subido como "{duplicate["filename"]}" '
+                f'(agregado el {duplicate["created_at"]}). No se guardó de nuevo para evitar contenido duplicado.'
+            ),
+        )
+
+    desired_stem = _sanitize_filename_stem(desired_filename) if desired_filename and desired_filename.strip() else None
 
     settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
     original_path = settings.DOCUMENTS_DIR / filename
@@ -1043,7 +1121,7 @@ def _upload_document(
             raise HTTPException(status_code=400, detail=f"No se pudo procesar el documento: {exc}") from exc
 
         text = "\n\n".join(page.text for page in document.pages).strip()
-        final_filename = _finalize_converted_document(original_path, ext, text)
+        final_filename = _finalize_converted_document(original_path, ext, text, desired_stem)
     elif ext in _IMAGE_EXTENSIONS:
         if not extracted_text or not extracted_text.strip():
             original_path.unlink(missing_ok=True)
@@ -1051,11 +1129,17 @@ def _upload_document(
                 status_code=400,
                 detail="Falta el texto extraído/revisado de la imagen (usa /extract-image-text primero).",
             )
-        final_filename = _finalize_converted_document(original_path, ext, extracted_text.strip())
+        final_filename = _finalize_converted_document(original_path, ext, extracted_text.strip(), desired_stem)
+    # Los documentos nativos (.txt/.xlsx) conservan su nombre de subida tal
+    # cual -- desired_filename solo aplica a las ramas de conversión de
+    # arriba, que ya resuelven colisiones de nombre de forma segura
+    # (_next_available_txt_name). Renombrar un nativo arriesgaría
+    # sobrescribir otro archivo existente sin ese resguardo.
 
     path = settings.DOCUMENTS_DIR / final_filename
     ingest_service.set_document_dependencia(final_filename, dependencia_id)
     ingest_service.set_document_vigencia(final_filename, vigente_desde)
+    ingest_service.record_document_hash(content_hash, final_filename)
 
     result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
     return _ingest_result_to_response(result, final_filename=final_filename)
@@ -1088,6 +1172,7 @@ def _delete_document(filename: str) -> None:
     if original is not None:
         original.unlink()
     ingest_service.delete_document_dependencia(safe_name)
+    ingest_service.delete_document_hash_by_filename(safe_name)
     vector_store.remove_document(safe_name)
 
 
@@ -1135,15 +1220,16 @@ async def upload_document_route(
     dependencia_id: Optional[int] = Form(default=None),
     vigente_desde: Optional[str] = Form(default=None),
     extracted_text: Optional[str] = Form(default=None),
+    desired_filename: Optional[str] = Form(default=None),
 ) -> IngestResponse:
     content = await file.read()
-    return _upload_document(content, file.filename, dependencia_id, vigente_desde, extracted_text)
+    return _upload_document(content, file.filename, dependencia_id, vigente_desde, extracted_text, desired_filename)
 
 
 @router.post("/root/documents/extract-image-text", dependencies=[Depends(require_root)])
 async def extract_image_text_route(file: UploadFile = File(...)) -> dict:
     content = await file.read()
-    return {"text": _extract_image_text(content, file.filename)}
+    return _build_extract_image_response(content, file.filename)
 
 
 @router.put("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
@@ -1184,6 +1270,7 @@ async def upload_document_for_panel(
     dependencia_id: Optional[int] = Form(default=None),
     vigente_desde: Optional[str] = Form(default=None),
     extracted_text: Optional[str] = Form(default=None),
+    desired_filename: Optional[str] = Form(default=None),
     identity: AdminIdentity = Depends(require_conversation_admin),
 ) -> IngestResponse:
     """Un administrador de dependencia no elige dependencia -- se ignora
@@ -1192,13 +1279,15 @@ async def upload_document_for_panel(
     general/compartido. El general sí puede elegir cualquiera, igual que root."""
     effective_dependencia_id = identity.dependencia_id if identity.role == "dependencia" else dependencia_id
     content = await file.read()
-    return _upload_document(content, file.filename, effective_dependencia_id, vigente_desde, extracted_text)
+    return _upload_document(
+        content, file.filename, effective_dependencia_id, vigente_desde, extracted_text, desired_filename
+    )
 
 
 @router.post("/admin/documents/extract-image-text", dependencies=[Depends(require_conversation_admin)])
 async def extract_image_text_for_panel(file: UploadFile = File(...)) -> dict:
     content = await file.read()
-    return {"text": _extract_image_text(content, file.filename)}
+    return _build_extract_image_response(content, file.filename)
 
 
 @router.put(

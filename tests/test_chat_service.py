@@ -241,3 +241,29 @@ def test_estimate_tokens_still_handles_plain_string_content():
     messages = [{"role": "user", "content": "a" * 400}]
 
     assert llm._estimate_tokens(messages, max_completion_tokens=100) == 400 // 4 + 100
+
+
+# --- Nombre de archivo sugerido (app/rag/llm.py::suggest_filename_from_text) ---
+
+
+@patch("app.rag.llm.get_client")
+def test_suggest_filename_from_text_returns_parsed_name(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning('{"filename": "clase-congreso-de-la-republica"}')
+
+    result = llm.suggest_filename_from_text("Una clase con el Congreso de la República...")
+
+    assert result == "clase-congreso-de-la-republica"
+
+
+@patch("app.rag.llm.get_client")
+def test_suggest_filename_from_text_returns_none_on_unparseable_response(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning("esto no es json")
+
+    assert llm.suggest_filename_from_text("texto cualquiera") is None
+
+
+@patch("app.rag.llm.get_client")
+def test_suggest_filename_from_text_returns_none_on_client_exception(mock_get_client):
+    mock_get_client.side_effect = RuntimeError("groq caído")
+
+    assert llm.suggest_filename_from_text("texto cualquiera") is None

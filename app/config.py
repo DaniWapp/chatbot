@@ -31,6 +31,13 @@ class Settings:
     # binario original) -- un límite más bajo aquí evita que la subida
     # llegue a intentar la llamada y falle del lado de Groq.
     GROQ_VISION_MAX_IMAGE_MB: int = _get_int("GROQ_VISION_MAX_IMAGE_MB", 14)
+    # El modelo de visión tiene un límite de cuenta MUCHO más estricto que
+    # GROQ_MODEL: solo 1000 tokens de salida por minuto (OTPM) en el tier
+    # gratuito -- confirmado en vivo (una sola extracción con
+    # max_completion_tokens=1500 ya lo superaba). Este modelo además es de
+    # razonamiento: su bloque <think> también cuenta como tokens de salida,
+    # así que el margen real es más chico de lo que parece.
+    GROQ_VISION_MAX_COMPLETION_TOKENS: int = _get_int("GROQ_VISION_MAX_COMPLETION_TOKENS", 700)
     # Límite real del plan gratuito para openai/gpt-oss-20b: 30 peticiones/min
     # y 8000 tokens/min (ver https://console.groq.com/docs/rate-limits). Se
     # opera por debajo de eso a propósito -- deja margen para picos breves,

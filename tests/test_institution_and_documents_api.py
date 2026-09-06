@@ -138,7 +138,13 @@ def test_document_upload_rejects_disallowed_extension(tmp_path, monkeypatch):
 # --- /api/admin/documents: general (paridad con root) y dependencia (solo lo suyo) ---
 
 
-def _upload_via_panel(token, filename, content=b"Contenido de prueba con suficiente longitud.", dependencia_id=None):
+def _upload_via_panel(token, filename, content=None, dependencia_id=None):
+    # Contenido único por defecto (deriva del nombre) -- el detector de
+    # duplicados por hash (ver test_upload_image_with_extracted_text_*)
+    # rechazaría subidas repetidas si dos llamadas compartieran bytes
+    # idénticos, aunque tengan nombres de archivo distintos.
+    if content is None:
+        content = f"Contenido de prueba con suficiente longitud para {filename}.".encode("utf-8")
     data = {}
     if dependencia_id is not None:
         data["dependencia_id"] = str(dependencia_id)
@@ -534,7 +540,7 @@ def test_upload_returns_final_filename_in_response(tmp_path, monkeypatch):
     ):
         res = client.post(
             "/api/root/documents",
-            files={"file": ("simple.txt", b"contenido de prueba suficientemente largo.", "text/plain")},
+            files={"file": ("simple.txt", b"otro contenido de prueba distinto y suficientemente largo.", "text/plain")},
             headers=_auth(token),
         )
 
@@ -563,7 +569,7 @@ def test_colliding_pdf_and_docx_get_consecutive_names_instead_of_overwriting(tmp
         ):
             res1 = client.post(
                 "/api/root/documents",
-                files={"file": ("Reporte.pdf", b"contenido falso, extraccion mockeada", "application/pdf")},
+                files={"file": ("Reporte.pdf", b"contenido falso PDF, extraccion mockeada", "application/pdf")},
                 headers=_auth(token),
             )
         assert res1.status_code == 200
@@ -578,7 +584,7 @@ def test_colliding_pdf_and_docx_get_consecutive_names_instead_of_overwriting(tmp
                 files={
                     "file": (
                         "Reporte.docx",
-                        b"contenido falso, extraccion mockeada",
+                        b"contenido falso DOCX, extraccion mockeada",
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     )
                 },
@@ -758,6 +764,179 @@ def test_download_image_document_returns_original_image(tmp_path, monkeypatch):
     assert "Afiche.png" in res.headers["content-disposition"]
 
 
+# --- Nombres genéricos y renombrado sugerido (ver app/api/routes.py::_looks_like_generic_filename) ---
+
+
+def test_looks_like_generic_filename_recognizes_common_patterns():
+    from app.api.routes import _looks_like_generic_filename
+
+    assert _looks_like_generic_filename("IMG-20260905-WA0044") is True
+    assert _looks_like_generic_filename("Screenshot_2026-09-05") is True
+    assert _looks_like_generic_filename("DSC_0001") is True
+    assert _looks_like_generic_filename("afiche_congreso") is False
+    assert _looks_like_generic_filename("Calendario2027") is False
+
+
+def test_extract_image_text_suggests_filename_only_for_generic_names(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+
+    with (
+        patch("app.api.routes.llm.extract_text_from_image", return_value="Texto de una foto de WhatsApp."),
+        patch("app.api.routes.llm.suggest_filename_from_text", return_value="clase-congreso") as mock_suggest,
+    ):
+        res_generic = client.post(
+            "/api/root/documents/extract-image-text",
+            files={"file": ("IMG-20260905-WA0044.jpg", b"contenido de imagen generica", "image/jpeg")},
+            headers=_auth(token),
+        )
+    assert res_generic.json()["suggested_filename"] == "clase-congreso"
+    mock_suggest.assert_called_once()
+
+    with (
+        patch("app.api.routes.llm.extract_text_from_image", return_value="Texto de un afiche con nombre propio."),
+        patch("app.api.routes.llm.suggest_filename_from_text") as mock_suggest_2,
+    ):
+        res_named = client.post(
+            "/api/root/documents/extract-image-text",
+            files={"file": ("afiche_congreso.jpg", b"contenido de imagen con nombre propio", "image/jpeg")},
+            headers=_auth(token),
+        )
+    assert res_named.json()["suggested_filename"] is None
+    mock_suggest_2.assert_not_called()
+
+
+def test_upload_with_desired_filename_overrides_derived_name(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("IMG-20260905-WA0099.jpg", b"contenido unico de esta imagen de prueba", "image/jpeg")},
+            data={
+                "extracted_text": "Contenido de una clase sobre gestión pública.",
+                "desired_filename": "clase-gestion-publica",
+            },
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert res.json()["final_filename"] == "clase-gestion-publica.txt"
+    assert (tmp_path / "clase-gestion-publica.txt").exists()
+    assert not (tmp_path / "IMG-20260905-WA0099.txt").exists()
+    assert (originals_dir / "clase-gestion-publica.jpg").exists()
+
+
+# --- Detección de duplicados por hash (ver app/api/routes.py::_upload_document) ---
+
+
+def test_uploading_same_content_twice_is_rejected(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+    content = b"contenido identico subido dos veces con nombres distintos"
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        first = client.post(
+            "/api/root/documents",
+            files={"file": ("primero.txt", content, "text/plain")},
+            headers=_auth(token),
+        )
+        second = client.post(
+            "/api/root/documents",
+            files={"file": ("segundo.txt", content, "text/plain")},
+            headers=_auth(token),
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "primero.txt" in second.json()["detail"]
+    assert not (tmp_path / "segundo.txt").exists()
+
+
+def test_deleting_document_allows_reuploading_same_content(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+    content = b"contenido que se sube, se borra, y se vuelve a subir"
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+        patch("app.services.ingest_service.vector_store.remove_document"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("repetible.txt", content, "text/plain")},
+            headers=_auth(token),
+        )
+        client.delete("/api/root/documents/repetible.txt", headers=_auth(token))
+
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("repetible.txt", content, "text/plain")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+
+
+def test_extract_image_text_reports_duplicate_without_writing_files(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+    token = _login_as()
+    image_bytes = b"contenido de una imagen ya subida antes"
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("ya_subida.jpg", image_bytes, "image/jpeg")},
+            data={"extracted_text": "Texto de la imagen ya subida."},
+            headers=_auth(token),
+        )
+
+    with patch("app.api.routes.llm.extract_text_from_image", return_value="Texto de la imagen ya subida."):
+        res = client.post(
+            "/api/root/documents/extract-image-text",
+            files={"file": ("copia_del_mismo_archivo.jpg", image_bytes, "image/jpeg")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert res.json()["duplicate"]["filename"] == "ya_subida.txt"
+    # El paso de extracción sigue siendo de solo lectura -- no se creó
+    # ningún archivo nuevo a partir de esta segunda llamada.
+    assert not (tmp_path / "copia_del_mismo_archivo.txt").exists()
+
+
 # --- Vigencia por documento (ver app/rag/retriever.py::drop_superseded_by_vigencia) ---
 
 
@@ -774,7 +953,7 @@ def test_upload_document_persists_vigente_desde(tmp_path, monkeypatch):
     ):
         res = client.post(
             "/api/root/documents",
-            files={"file": ("Calendario2027.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            files={"file": ("Calendario2027.txt", b"Contenido del calendario 2027 de prueba.", "text/plain")},
             data={"vigente_desde": "2026-11-01"},
             headers=_auth(token),
         )
@@ -798,7 +977,7 @@ def test_upload_document_without_vigente_desde_leaves_it_none(tmp_path, monkeypa
     ):
         res = client.post(
             "/api/root/documents",
-            files={"file": ("Reglamento.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            files={"file": ("Reglamento.txt", b"Contenido del reglamento de prueba.", "text/plain")},
             headers=_auth(token),
         )
 
@@ -821,7 +1000,7 @@ def test_recategorize_document_updates_vigente_desde(tmp_path, monkeypatch):
     ):
         client.post(
             "/api/root/documents",
-            files={"file": ("Calendario2026.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            files={"file": ("Calendario2026.txt", b"Contenido del calendario 2026 de prueba.", "text/plain")},
             headers=_auth(token),
         )
 

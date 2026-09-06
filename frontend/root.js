@@ -883,6 +883,11 @@ document.getElementById("new-document-button").addEventListener("click", () => {
         <input id="upload-document-vigencia" type="date" />
       </label>
       <p class="modal-hint">Solo para documentos que se reemplazan con el tiempo (calendarios, precios, etc.): si dos documentos responden la misma pregunta, gana el de fecha más reciente -- puede ser una fecha futura si ya se sabe que ese documento aplicará desde entonces. Déjalo vacío para documentos generales que no vencen.</p>
+      <label>Nombre del archivo (opcional)
+        <input id="upload-document-desired-name" type="text" placeholder="Dejar vacío para usar el nombre original" maxlength="150" />
+      </label>
+      <p class="modal-hint">Para PDF/DOCX/imágenes -- útil cuando el archivo trae un nombre genérico (ej. una foto de WhatsApp). En imágenes con nombre genérico se sugiere uno automáticamente tras extraer el texto.</p>
+      <p id="upload-document-duplicate-warning" class="modal-error" hidden></p>
       <div id="upload-document-extracted-container" hidden>
         <label>Texto extraído de la imagen (revísalo y corrígelo si hace falta)
           <textarea id="upload-document-extracted-text" rows="8"></textarea>
@@ -899,6 +904,8 @@ document.getElementById("new-document-button").addEventListener("click", () => {
   const fileInput = document.getElementById("upload-document-file");
   const extractedContainer = document.getElementById("upload-document-extracted-container");
   const extractedTextarea = document.getElementById("upload-document-extracted-text");
+  const desiredNameInput = document.getElementById("upload-document-desired-name");
+  const duplicateWarningEl = document.getElementById("upload-document-duplicate-warning");
   const submitButton = document.querySelector("#upload-document-form button[type=submit]");
   let hasExtractedText = false;
 
@@ -906,6 +913,8 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     hasExtractedText = false;
     extractedContainer.hidden = true;
     extractedTextarea.value = "";
+    desiredNameInput.value = "";
+    duplicateWarningEl.hidden = true;
     submitButton.textContent = "Subir";
   });
 
@@ -933,6 +942,13 @@ document.getElementById("new-document-button").addEventListener("click", () => {
         const data = await res.json();
         extractedTextarea.value = data.text || "";
         extractedContainer.hidden = false;
+        if (data.suggested_filename) desiredNameInput.value = data.suggested_filename;
+        if (data.duplicate) {
+          duplicateWarningEl.textContent = `Esta imagen ya está subida como "${data.duplicate.filename}" (agregada el ${data.duplicate.created_at}). Si continúas, el guardado la rechazará para no duplicar contenido.`;
+          duplicateWarningEl.hidden = false;
+        } else {
+          duplicateWarningEl.hidden = true;
+        }
         hasExtractedText = true;
         submitButton.textContent = "Guardar documento";
       } catch (err) {
@@ -953,6 +969,7 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     if (dependenciaValue) formData.append("dependencia_id", dependenciaValue);
     if (vigenciaValue) formData.append("vigente_desde", vigenciaValue);
     if (isImage) formData.append("extracted_text", extractedTextarea.value);
+    if (desiredNameInput.value.trim()) formData.append("desired_filename", desiredNameInput.value.trim());
 
     try {
       const res = await rootFetch("/api/root/documents", { method: "POST", body: formData });

@@ -97,6 +97,38 @@ def set_document_vigencia(filename: str, vigente_desde: Optional[str]) -> None:
         conn.commit()
 
 
+def find_document_by_hash(content_hash: str) -> Optional[dict]:
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT filename, created_at FROM document_hashes WHERE content_hash = ?", (content_hash,)
+        ).fetchone()
+    return {"filename": row[0], "created_at": row[1]} if row else None
+
+
+def record_document_hash(content_hash: str, filename: str) -> None:
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            """
+            INSERT INTO document_hashes (content_hash, filename, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(content_hash) DO UPDATE SET
+                filename = excluded.filename,
+                created_at = excluded.created_at
+            """,
+            (content_hash, filename, _now()),
+        )
+        conn.commit()
+
+
+def delete_document_hash_by_filename(filename: str) -> None:
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute("DELETE FROM document_hashes WHERE filename = ?", (filename,))
+        conn.commit()
+
+
 def delete_document_dependencia(filename: str) -> None:
     with history.db_lock():
         conn = history.get_connection()

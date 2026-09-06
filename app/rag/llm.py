@@ -526,7 +526,56 @@ def extract_text_from_image(image_bytes: bytes, ext: str) -> str:
             }
         ],
         temperature=0.2,
-        max_completion_tokens=1500,
+        max_completion_tokens=settings.GROQ_VISION_MAX_COMPLETION_TOKENS,
     )
     raw_text = completion.choices[0].message.content or ""
     return _THINK_BLOCK_PATTERN.sub("", raw_text).strip()
+
+
+def suggest_filename_from_text(extracted_text: str) -> Optional[str]:
+    """Sugiere un nombre de archivo corto y descriptivo a partir del texto
+    ya extraído -- se usa solo cuando el nombre original es genérico (ver
+    _looks_like_generic_filename en app/api/routes.py, ej. fotos de
+    WhatsApp como "IMG-20260905-WA0044"). Llamada de texto plano aparte de
+    extract_text_from_image a propósito: combinar imagen + JSON
+    estructurado en una sola llamada es más frágil (el modelo de visión ya
+    mete su bloque <think> de forma poco predecible), mientras que este
+    patrón (GROQ_MODEL + response_format json_object) ya es confiable en
+    classify_department/rewrite_query_variations.
+
+    Nunca lanza: ante cualquier fallo devuelve None y se conserva el
+    nombre original, sin bloquear la subida por una sugerencia fallida."""
+    try:
+        completion = _create_completion(
+            "suggest_filename_from_text",
+            model=settings.GROQ_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "A partir de este texto extraído de un documento, sugiere un nombre de "
+                        "archivo corto y descriptivo (sin extensión, en minúsculas, palabras "
+                        "separadas por guiones, sin tildes ni caracteres especiales, máximo 60 "
+                        "caracteres). Si es un afiche de evento, basado en el título del evento.\n\n"
+                        f"TEXTO:\n{extracted_text[:2000]}\n\n"
+                        'Responde ÚNICAMENTE con JSON: {"filename": "nombre-sugerido"}'
+                    ),
+                }
+            ],
+            temperature=0.2,
+            # GROQ_MODEL es un modelo de razonamiento -- con reasoning_effort
+            # bajo igual puede agotar el presupuesto pensando y dejar el
+            # contenido final vacío. Confirmado en vivo: 60 y 150 fallaron
+            # ("max completion tokens reached before generating a valid
+            # document") -- este prompt analiza hasta 2000 caracteres de
+            # texto, así que razona más que una clasificación corta.
+            max_completion_tokens=500,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        suggested = parsed.get("filename")
+        return suggested.strip() if isinstance(suggested, str) and suggested.strip() else None
+    except Exception:
+        logger.exception("Fallo sugiriendo nombre de archivo")
+        return None

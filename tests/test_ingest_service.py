@@ -6,8 +6,11 @@ sin depender de descargar el modelo real de Sentence Transformers.
 from unittest.mock import patch
 
 from app.services.ingest_service import (
+    delete_document_hash_by_filename,
+    find_document_by_hash,
     get_document_dependencia,
     get_document_vigencia,
+    record_document_hash,
     run_ingestion,
     set_document_dependencia,
     set_document_vigencia,
@@ -111,3 +114,27 @@ def test_set_document_dependencia_does_not_clobber_vigencia():
 
     assert get_document_vigencia("vigencia-test-c.txt") == "2026-06-01"
     assert get_document_dependencia("vigencia-test-c.txt") == 5
+
+
+# --- Duplicados por hash (ver app/api/routes.py::_upload_document) ---
+
+
+def test_find_document_by_hash_defaults_to_none():
+    assert find_document_by_hash("hash-que-no-existe") is None
+
+
+def test_record_and_find_document_by_hash():
+    record_document_hash("hash-test-a", "documento-a.txt")
+
+    found = find_document_by_hash("hash-test-a")
+
+    assert found["filename"] == "documento-a.txt"
+    assert found["created_at"]
+
+
+def test_delete_document_hash_by_filename_removes_the_lookup():
+    record_document_hash("hash-test-b", "documento-b.txt")
+
+    delete_document_hash_by_filename("documento-b.txt")
+
+    assert find_document_by_hash("hash-test-b") is None
