@@ -5,8 +5,9 @@ history.get_connection()/ensure_column()/db_lock() -- ver el docstring de
 ese módulo.
 """
 import datetime
+import json
 import secrets
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import bcrypt
 
@@ -259,20 +260,37 @@ def create_dependencia(name: str, description: str) -> int:
         return cursor.lastrowid
 
 
+def _row_to_dependencia(row) -> dict:
+    dependencia_id, name, description, created_at, horario_dias, horario_rangos = row
+    return {
+        "id": dependencia_id,
+        "name": name,
+        "description": description,
+        "created_at": created_at,
+        "horario_dias": [int(d) for d in horario_dias.split(",")] if horario_dias else None,
+        "horario_rangos": json.loads(horario_rangos) if horario_rangos else None,
+    }
+
+
 def list_dependencias() -> List[dict]:
     with history.db_lock():
         conn = history.get_connection()
-        rows = conn.execute("SELECT id, name, description, created_at FROM dependencias ORDER BY name ASC").fetchall()
-    return [{"id": r[0], "name": r[1], "description": r[2], "created_at": r[3]} for r in rows]
+        rows = conn.execute(
+            "SELECT id, name, description, created_at, horario_dias, horario_rangos "
+            "FROM dependencias ORDER BY name ASC"
+        ).fetchall()
+    return [_row_to_dependencia(row) for row in rows]
 
 
 def get_dependencia(dependencia_id: int) -> Optional[dict]:
     with history.db_lock():
         conn = history.get_connection()
         row = conn.execute(
-            "SELECT id, name, description, created_at FROM dependencias WHERE id = ?", (dependencia_id,)
+            "SELECT id, name, description, created_at, horario_dias, horario_rangos "
+            "FROM dependencias WHERE id = ?",
+            (dependencia_id,),
         ).fetchone()
-    return {"id": row[0], "name": row[1], "description": row[2], "created_at": row[3]} if row else None
+    return _row_to_dependencia(row) if row else None
 
 
 def update_dependencia(dependencia_id: int, name: Optional[str] = None, description: Optional[str] = None) -> None:
@@ -303,6 +321,62 @@ def delete_dependencia(dependencia_id: int) -> None:
             )
         conn.execute("DELETE FROM dependencias WHERE id = ?", (dependencia_id,))
         conn.commit()
+
+
+# --- Horario de atención -------------------------------------------------
+
+
+def get_dependencia_horario(dependencia_id: int) -> Optional[dict]:
+    """None si la dependencia no tiene horario configurado -- ver
+    is_within_horario() para qué significa eso (disponible siempre)."""
+    dependencia = get_dependencia(dependencia_id)
+    if dependencia is None or not dependencia["horario_dias"]:
+        return None
+    return {"dias": dependencia["horario_dias"], "rangos": dependencia["horario_rangos"]}
+
+
+def set_dependencia_horario(dependencia_id: int, dias: List[int], rangos: List[Tuple[str, str]]) -> None:
+    if get_dependencia(dependencia_id) is None:
+        raise ValueError(f"No existe la dependencia {dependencia_id}")
+    dias_text = ",".join(str(d) for d in sorted(set(dias)))
+    rangos_json = json.dumps([[inicio, fin] for inicio, fin in rangos])
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            "UPDATE dependencias SET horario_dias = ?, horario_rangos = ? WHERE id = ?",
+            (dias_text, rangos_json, dependencia_id),
+        )
+        conn.commit()
+
+
+def is_within_horario(dependencia_id: Optional[int]) -> bool:
+    """True si ahora mismo hay atención humana disponible para esa
+    dependencia. dependencia_id None (no se pudo clasificar al escalar) o
+    sin horario configurado -> True (fail-open: rollout seguro, nada
+    cambia hasta que root/general configuren un horario a propósito)."""
+    if dependencia_id is None:
+        return True
+    horario = get_dependencia_horario(dependencia_id)
+    if horario is None:
+        return True
+    now = datetime.datetime.now()
+    if now.isoweekday() not in horario["dias"]:
+        return False
+    ahora_hhmm = now.strftime("%H:%M")
+    return any(inicio <= ahora_hhmm <= fin for inicio, fin in horario["rangos"])
+
+
+def format_horario(dependencia_id: Optional[int]) -> Optional[str]:
+    """Texto legible del horario configurado (para mostrárselo al
+    estudiante cuando escala fuera de horario), o None si no hay ninguno
+    configurado."""
+    horario = get_dependencia_horario(dependencia_id) if dependencia_id is not None else None
+    if horario is None:
+        return None
+    dias_nombres = {1: "lunes", 2: "martes", 3: "miércoles", 4: "jueves", 5: "viernes", 6: "sábado", 7: "domingo"}
+    dias_texto = ", ".join(dias_nombres[d].capitalize() for d in horario["dias"])
+    rangos_texto = " y ".join(f"{inicio} a {fin}" for inicio, fin in horario["rangos"])
+    return f"{dias_texto}, de {rangos_texto}"
 
 
 # --- Institución -----------------------------------------------------

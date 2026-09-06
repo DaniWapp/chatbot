@@ -67,10 +67,12 @@ class SessionSummary(BaseModel):
     needs_human: bool
     student_name: Optional[str] = None
     student_email: Optional[str] = None
+    student_phone: Optional[str] = None
     escalated_at: Optional[str] = None
     dependencia_id: Optional[int] = None
     dependencia_assigned_at: Optional[str] = None
     first_response_at: Optional[str] = None
+    is_connected: bool = False
 
 
 class SessionListResponse(BaseModel):
@@ -98,12 +100,20 @@ class EscalateRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=200)
     email: str = Field(..., min_length=3, max_length=200)
+    phone: Optional[str] = Field(default=None, max_length=30)
 
     @field_validator("email")
     @classmethod
     def validate_email_format(cls, value: str) -> str:
         if not _EMAIL_RE.match(value.strip()):
             raise ValueError("Correo electrónico con formato inválido.")
+        return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_format(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or not value.strip():
+            return None
         return value.strip()
 
 
@@ -162,6 +172,33 @@ class DependenciaResponse(BaseModel):
     name: str
     description: str
     created_at: str
+    horario_dias: Optional[List[int]] = None
+    horario_rangos: Optional[List[List[str]]] = None
+
+
+class HorarioRango(BaseModel):
+    inicio: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    fin: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+
+    @field_validator("fin")
+    @classmethod
+    def validate_range_order(cls, value: str, info) -> str:
+        inicio = info.data.get("inicio")
+        if inicio is not None and value <= inicio:
+            raise ValueError("La hora de fin debe ser posterior a la hora de inicio.")
+        return value
+
+
+class DependenciaHorarioRequest(BaseModel):
+    dias: List[int] = Field(..., min_length=1)
+    rangos: List[HorarioRango] = Field(..., min_length=1)
+
+    @field_validator("dias")
+    @classmethod
+    def validate_dias(cls, value: List[int]) -> List[int]:
+        if any(d < 1 or d > 7 for d in value):
+            raise ValueError("Los días deben estar entre 1 (lunes) y 7 (domingo).")
+        return sorted(set(value))
 
 
 class HostilityKeywordCreateRequest(BaseModel):

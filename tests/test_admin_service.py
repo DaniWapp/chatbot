@@ -2,6 +2,8 @@
 hash de contraseñas, validaciones al crear/editar administradores, sesiones
 de login (creación, expiración, invalidación al cambiar contraseña o
 desactivar la cuenta) y el CRUD de dependencias."""
+import datetime
+
 import pytest
 
 from app.services import admin_service as svc
@@ -111,3 +113,83 @@ def test_delete_dependencia_blocked_while_admin_assigned():
 
     with pytest.raises(ValueError):
         svc.delete_dependencia(dep_id)
+
+
+# --- Horario de atención (ver app/api/routes.py::escalate) ----------------
+
+
+def test_dependencia_horario_defaults_to_none_and_available_always():
+    """Sin horario configurado, la dependencia se trata como disponible
+    siempre -- rollout seguro, no cambia nada hasta que un admin configure
+    un horario a propósito."""
+    dep_id = svc.create_dependencia("Dep Horario Sin Config", "descripcion")
+
+    assert svc.get_dependencia_horario(dep_id) is None
+    assert svc.is_within_horario(dep_id) is True
+
+
+def test_is_within_horario_none_dependencia_is_always_true():
+    """dependencia_id None significa que no se pudo clasificar al escalar
+    -- no hay a quién chequearle el horario, así que nunca bloquea."""
+    assert svc.is_within_horario(None) is True
+
+
+def test_set_and_get_dependencia_horario():
+    dep_id = svc.create_dependencia("Dep Horario Set", "descripcion")
+
+    svc.set_dependencia_horario(dep_id, [1, 2, 3, 4, 5], [("08:00", "12:00"), ("14:00", "18:00")])
+
+    horario = svc.get_dependencia_horario(dep_id)
+    assert horario["dias"] == [1, 2, 3, 4, 5]
+    assert horario["rangos"] == [["08:00", "12:00"], ["14:00", "18:00"]]
+
+
+def test_set_dependencia_horario_rejects_missing_dependencia():
+    with pytest.raises(ValueError):
+        svc.set_dependencia_horario(999999, [1], [("08:00", "12:00")])
+
+
+def test_is_within_horario_true_when_now_is_inside_configured_range():
+    dep_id = svc.create_dependencia("Dep Horario Dentro", "descripcion")
+    today = datetime.datetime.now().isoweekday()
+
+    svc.set_dependencia_horario(dep_id, [today], [("00:00", "23:59")])
+
+    assert svc.is_within_horario(dep_id) is True
+
+
+def test_is_within_horario_false_when_today_is_not_a_configured_day():
+    dep_id = svc.create_dependencia("Dep Horario Otro Dia", "descripcion")
+    today = datetime.datetime.now().isoweekday()
+    other_day = 1 if today != 1 else 2
+
+    svc.set_dependencia_horario(dep_id, [other_day], [("00:00", "23:59")])
+
+    assert svc.is_within_horario(dep_id) is False
+
+
+def test_is_within_horario_false_when_outside_configured_range():
+    dep_id = svc.create_dependencia("Dep Horario Fuera Rango", "descripcion")
+    today = datetime.datetime.now().isoweekday()
+
+    # Rango de un minuto a medianoche: prácticamente nunca coincide con la
+    # hora real de la prueba (única excepción, correr exactamente a las
+    # 00:00, un riesgo de parpadeo aceptado a propósito aquí).
+    svc.set_dependencia_horario(dep_id, [today], [("00:00", "00:01")])
+
+    assert svc.is_within_horario(dep_id) is False
+
+
+def test_format_horario_returns_readable_text():
+    dep_id = svc.create_dependencia("Dep Horario Texto", "descripcion")
+    svc.set_dependencia_horario(dep_id, [1, 2, 3, 4, 5], [("08:00", "12:00"), ("14:00", "18:00")])
+
+    texto = svc.format_horario(dep_id)
+
+    assert "Lunes" in texto and "Viernes" in texto
+    assert "08:00 a 12:00" in texto and "14:00 a 18:00" in texto
+
+
+def test_format_horario_returns_none_when_not_configured():
+    dep_id = svc.create_dependencia("Dep Horario Sin Texto", "descripcion")
+    assert svc.format_horario(dep_id) is None

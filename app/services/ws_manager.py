@@ -57,6 +57,14 @@ def disconnect_session(session_id: str, websocket: WebSocket) -> None:
             del _session_connections[session_id]
 
 
+def is_session_connected(session_id: str) -> bool:
+    """True si el estudiante de esa sesión tiene el chat abierto ahora
+    mismo (WebSocket activo) -- usado por el panel para avisarle al
+    asesor si responder por el chat le va a llegar a alguien o no."""
+    with _lock:
+        return bool(_session_connections.get(session_id))
+
+
 async def _send_to(targets: Set[WebSocket], payload: str, on_stale) -> None:
     for ws in list(targets):
         try:

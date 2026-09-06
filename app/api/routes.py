@@ -39,6 +39,7 @@ from app.models.schemas import (
     CheckinResponseRequest,
     DashboardResponse,
     DependenciaCreateRequest,
+    DependenciaHorarioRequest,
     DependenciaResponse,
     DependenciaUpdateRequest,
     DocumentInfo,
@@ -327,7 +328,9 @@ def escalate(payload: EscalateRequest) -> dict:
     administrador correspondiente. De aquí en adelante el chatbot deja de
     responder en esta sesión (ver chat_service.needs_human)."""
     dependencia_id = _classify_department_for_session(payload.session_id)
-    escalated_at = history_service.escalate_session(payload.session_id, payload.name, payload.email, dependencia_id)
+    escalated_at = history_service.escalate_session(
+        payload.session_id, payload.name, payload.email, dependencia_id, payload.phone
+    )
     ws_manager.broadcast_to_dependencia(
         dependencia_id,
         {
@@ -339,7 +342,16 @@ def escalate(payload: EscalateRequest) -> dict:
             "dependencia_id": dependencia_id,
         },
     )
-    return {"status": "ok", "escalated_at": escalated_at, "dependencia_id": dependencia_id}
+    within_horario = admin_service.is_within_horario(dependencia_id)
+    response = {
+        "status": "ok",
+        "escalated_at": escalated_at,
+        "dependencia_id": dependencia_id,
+        "within_horario": within_horario,
+    }
+    if not within_horario:
+        response["horario_texto"] = admin_service.format_horario(dependencia_id)
+    return response
 
 
 @router.post("/auth/login", response_model=LoginResponse, dependencies=[Depends(enforce_login_rate_limit)])
@@ -412,7 +424,10 @@ def list_sessions(
         general_oversight=(identity.role == "general"),
     )
     return SessionListResponse(
-        sessions=[SessionSummary(**s) for s in data["sessions"]],
+        sessions=[
+            SessionSummary(**s, is_connected=ws_manager.is_session_connected(s["session_id"]))
+            for s in data["sessions"]
+        ],
         total=data["total"],
         has_more=data["has_more"],
         pending_count=data["pending_count"],
@@ -720,6 +735,42 @@ def update_dependencia_route(dependencia_id: int, payload: DependenciaUpdateRequ
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return DependenciaResponse(**admin_service.get_dependencia(dependencia_id))
+
+
+def _set_dependencia_horario(dependencia_id: int, payload: DependenciaHorarioRequest) -> DependenciaResponse:
+    try:
+        admin_service.set_dependencia_horario(
+            dependencia_id, payload.dias, [(r.inicio, r.fin) for r in payload.rangos]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return DependenciaResponse(**admin_service.get_dependencia(dependencia_id))
+
+
+@router.put(
+    "/root/dependencias/{dependencia_id}/horario",
+    response_model=DependenciaResponse,
+    dependencies=[Depends(require_root)],
+)
+def set_dependencia_horario_route(dependencia_id: int, payload: DependenciaHorarioRequest) -> DependenciaResponse:
+    return _set_dependencia_horario(dependencia_id, payload)
+
+
+@router.put(
+    "/admin/dependencias/{dependencia_id}/horario",
+    response_model=DependenciaResponse,
+    dependencies=[Depends(require_conversation_admin)],
+)
+def set_dependencia_horario_for_panel(
+    dependencia_id: int, payload: DependenciaHorarioRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> DependenciaResponse:
+    # A diferencia de recategorizar documentos (solo-general), aquí una
+    # dependencia SÍ puede gestionar su propio horario -- root/general
+    # pueden el de cualquiera. Mismo patrón de "ownership check" que
+    # delete_document_for_panel.
+    if identity.role == "dependencia" and dependencia_id != identity.dependencia_id:
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta dependencia.")
+    return _set_dependencia_horario(dependencia_id, payload)
 
 
 @router.delete("/root/dependencias/{dependencia_id}", dependencies=[Depends(require_root)])

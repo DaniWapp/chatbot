@@ -99,6 +99,10 @@ def _get_connection() -> sqlite3.Connection:
         _connection.execute("CREATE INDEX IF NOT EXISTS idx_admin_messages_session ON admin_messages(session_id)")
         _ensure_column(_connection, "session_meta", "resolved_by", "TEXT")
         _ensure_column(_connection, "admin_messages", "message_type", "TEXT NOT NULL DEFAULT 'text'")
+        # Teléfono opcional al escalar -- contacto alterno si no hay
+        # atención en línea (ver app/services/admin_service.py::is_within_horario
+        # y app/api/routes.py::escalate).
+        _ensure_column(_connection, "session_meta", "student_phone", "TEXT")
 
         # --- Administración: dependencias, cuentas de administrador, sesiones ---
         _connection.execute(
@@ -111,6 +115,14 @@ def _get_connection() -> sqlite3.Connection:
             )
             """
         )
+        # Horario de atención humana de la dependencia -- ambas NULL =
+        # sin configurar (se trata como disponible siempre, ver
+        # app/services/admin_service.py::is_within_horario).
+        # horario_dias: días ISO separados por coma ("1,2,3,4,5" = lun-vie).
+        # horario_rangos: JSON, lista de bloques [["08:00","12:00"], ...]
+        # -- una lista, no un solo rango, para horarios partidos por almuerzo.
+        _ensure_column(_connection, "dependencias", "horario_dias", "TEXT")
+        _ensure_column(_connection, "dependencias", "horario_rangos", "TEXT")
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS admins (
@@ -426,33 +438,41 @@ def get_session_meta(session_id: str) -> dict:
 
 
 def escalate_session(
-    session_id: str, student_name: str, student_email: str, dependencia_id: Optional[int] = None
+    session_id: str,
+    student_name: str,
+    student_email: str,
+    dependencia_id: Optional[int] = None,
+    student_phone: Optional[str] = None,
 ) -> str:
     """Marca la sesión como necesitando atención humana y guarda los datos
     de contacto del estudiante. dependencia_id (decidido por el LLM al
     momento de escalar, ver classify_department en app/rag/llm.py) es None
     cuando no se pudo clasificar -- la conversación queda en la bandeja del
-    administrador general. Devuelve el timestamp del escalamiento."""
+    administrador general. student_phone es opcional -- contacto alterno
+    para cuando la escalación ocurre fuera del horario de atención (ver
+    app/services/admin_service.py::is_within_horario). Devuelve el
+    timestamp del escalamiento."""
     escalated_at = _now()
     with _lock:
         conn = _get_connection()
         conn.execute(
             """
             INSERT INTO session_meta
-                (session_id, needs_human, student_name, student_email, escalated_at, resolved_at,
+                (session_id, needs_human, student_name, student_email, student_phone, escalated_at, resolved_at,
                  dependencia_id, dependencia_assigned_at, first_response_at)
-            VALUES (?, 1, ?, ?, ?, NULL, ?, ?, NULL)
+            VALUES (?, 1, ?, ?, ?, ?, NULL, ?, ?, NULL)
             ON CONFLICT(session_id) DO UPDATE SET
                 needs_human = 1,
                 student_name = excluded.student_name,
                 student_email = excluded.student_email,
+                student_phone = excluded.student_phone,
                 escalated_at = excluded.escalated_at,
                 resolved_at = NULL,
                 dependencia_id = excluded.dependencia_id,
                 dependencia_assigned_at = excluded.dependencia_assigned_at,
                 first_response_at = NULL
             """,
-            (session_id, student_name, student_email, escalated_at, dependencia_id, escalated_at),
+            (session_id, student_name, student_email, student_phone, escalated_at, dependencia_id, escalated_at),
         )
         conn.commit()
     return escalated_at
@@ -744,7 +764,7 @@ def _list_all_sessions() -> List[dict]:
             "SELECT session_id, message, MAX(created_at) AS last_active FROM admin_messages GROUP BY session_id"
         ).fetchall()
         meta_rows = conn.execute(
-            "SELECT session_id, needs_human, student_name, student_email, escalated_at, dependencia_id, "
+            "SELECT session_id, needs_human, student_name, student_email, student_phone, escalated_at, dependencia_id, "
             "dependencia_assigned_at, first_response_at "
             "FROM session_meta"
         ).fetchall()
@@ -772,22 +792,24 @@ def _list_all_sessions() -> List[dict]:
             current["last_message"] = message
 
     meta_map = {
-        session_id: (bool(flag), student_name, student_email, escalated_at, dependencia_id, dep_assigned_at, first_response_at)
-        for session_id, flag, student_name, student_email, escalated_at, dependencia_id, dep_assigned_at, first_response_at in meta_rows
+        session_id: (bool(flag), student_name, student_email, student_phone, escalated_at, dependencia_id, dep_assigned_at, first_response_at)
+        for session_id, flag, student_name, student_email, student_phone, escalated_at, dependencia_id, dep_assigned_at, first_response_at in meta_rows
     }
     for session_id, data in sessions.items():
         (
             needs_human_flag,
             student_name,
             student_email,
+            student_phone,
             escalated_at,
             dependencia_id,
             dependencia_assigned_at,
             first_response_at,
-        ) = meta_map.get(session_id, (False, None, None, None, None, None, None))
+        ) = meta_map.get(session_id, (False, None, None, None, None, None, None, None))
         data["needs_human"] = needs_human_flag
         data["student_name"] = student_name
         data["student_email"] = student_email
+        data["student_phone"] = student_phone
         data["escalated_at"] = escalated_at
         data["dependencia_id"] = dependencia_id
         data["dependencia_assigned_at"] = dependencia_assigned_at

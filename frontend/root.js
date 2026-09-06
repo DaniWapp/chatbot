@@ -187,14 +187,110 @@ function renderDependenciasTable() {
       <td>
         <div class="row-actions">
           <button type="button" class="edit-button">Editar</button>
+          <button type="button" class="horario-button">Horario</button>
           <button type="button" class="danger delete-button">Eliminar</button>
         </div>
       </td>
     `;
     tr.querySelector(".edit-button").addEventListener("click", () => openDependenciaModal(dep));
+    tr.querySelector(".horario-button").addEventListener("click", () => openHorarioModal(dep, "/api/root/dependencias"));
     tr.querySelector(".delete-button").addEventListener("click", () => deleteDependencia(dep));
     tbody.appendChild(tr);
   }
+}
+
+const HORARIO_DIA_LABELS = { 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom" };
+
+function horarioRangoRowHtml(inicio, fin) {
+  return `
+    <div class="horario-rango-row">
+      <input type="time" class="horario-rango-inicio" value="${inicio || ""}" required />
+      <span>a</span>
+      <input type="time" class="horario-rango-fin" value="${fin || ""}" required />
+      <button type="button" class="danger remove-rango-button">Quitar</button>
+    </div>
+  `;
+}
+
+function openHorarioModal(dep, baseUrl) {
+  const diasActuales = new Set(dep.horario_dias || []);
+  const rangosActuales = dep.horario_rangos && dep.horario_rangos.length ? dep.horario_rangos : [["", ""]];
+
+  openModal(`
+    <h3>Horario de atención — ${escapeHtml(dep.name)}</h3>
+    <form id="horario-form" class="modal-form">
+      <label>Días de atención</label>
+      <div class="horario-dias-checks">
+        ${Object.entries(HORARIO_DIA_LABELS)
+          .map(
+            ([value, label]) => `
+              <label class="horario-dia-check">
+                <input type="checkbox" value="${value}" ${diasActuales.has(Number(value)) ? "checked" : ""} />
+                ${label}
+              </label>
+            `
+          )
+          .join("")}
+      </div>
+      <label>Bloques de horario (uno por franja, ej. mañana y tarde)</label>
+      <div id="horario-rangos-list">
+        ${rangosActuales.map(([inicio, fin]) => horarioRangoRowHtml(inicio, fin)).join("")}
+      </div>
+      <button type="button" id="add-horario-rango-button" class="secondary-button">+ Agregar bloque</button>
+      <p id="horario-form-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button">Cancelar</button>
+        <button type="submit" class="primary-button">Guardar</button>
+      </div>
+    </form>
+  `);
+
+  const rangosListEl = document.getElementById("horario-rangos-list");
+  const wireRemoveButtons = () => {
+    rangosListEl.querySelectorAll(".remove-rango-button").forEach((btn) => {
+      btn.onclick = () => {
+        if (rangosListEl.children.length > 1) btn.closest(".horario-rango-row").remove();
+      };
+    });
+  };
+  wireRemoveButtons();
+
+  document.getElementById("add-horario-rango-button").addEventListener("click", () => {
+    rangosListEl.insertAdjacentHTML("beforeend", horarioRangoRowHtml("", ""));
+    wireRemoveButtons();
+  });
+
+  document.getElementById("horario-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("horario-form-error");
+    errorEl.hidden = true;
+
+    const dias = Array.from(document.querySelectorAll(".horario-dia-check input:checked")).map((el) => Number(el.value));
+    const rangos = Array.from(rangosListEl.querySelectorAll(".horario-rango-row")).map((row) => ({
+      inicio: row.querySelector(".horario-rango-inicio").value,
+      fin: row.querySelector(".horario-rango-fin").value,
+    }));
+
+    if (dias.length === 0 || rangos.some((r) => !r.inicio || !r.fin)) {
+      errorEl.textContent = "Selecciona al menos un día y completa todos los bloques de horario.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    try {
+      const res = await rootFetch(`${baseUrl}/${dep.id}/horario`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dias, rangos }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res));
+      closeModal();
+      await loadDependencias();
+    } catch (err) {
+      errorEl.textContent = err.message || "No se pudo guardar, intenta de nuevo.";
+      errorEl.hidden = false;
+    }
+  });
 }
 
 function openDependenciaModal(dep) {

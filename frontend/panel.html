@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=40" />
+  <link rel="stylesheet" href="/static/panel.css?v=41" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -45,6 +45,7 @@
       <button class="panel-tab" data-tab="documentos" type="button" id="documents-tab-button" hidden>Documentos</button>
       <button class="panel-tab" data-tab="moderacion" type="button" id="moderacion-tab-button" hidden>Moderación</button>
       <button class="panel-tab" data-tab="widget" type="button" id="widget-tab-button" hidden>Widget</button>
+      <button class="panel-tab" data-tab="horario" type="button" id="horario-tab-button" hidden>Horario</button>
     </nav>
 
     <div id="tab-conversaciones" class="panel-tab-panel panel-body">
@@ -209,6 +210,18 @@
       </p>
       <pre id="panel-widget-snippet-code" class="widget-snippet"></pre>
     </section>
+
+    <section id="tab-horario" class="panel-tab-panel" hidden>
+      <div class="panel-section-header">
+        <h2>Horario de atención</h2>
+      </div>
+      <p class="panel-section-hint">
+        Cuando un estudiante pide hablar con un asesor fuera de este
+        horario, el chat se lo indica y le ofrece dejar un contacto
+        alterno en vez de esperar en línea.
+      </p>
+      <div id="panel-horario-content"></div>
+    </section>
   </div>
 
   <div id="modal-overlay" class="modal-overlay" hidden>
@@ -219,6 +232,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/panel.js?v=42"></script>
+  <script src="/static/panel.js?v=43"></script>
 </body>
 </html>

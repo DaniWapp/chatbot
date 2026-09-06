@@ -35,6 +35,7 @@ const documentsTabButtonEl = document.getElementById("documents-tab-button");
 const dashboardTabButtonEl = document.getElementById("dashboard-tab-button");
 const moderacionTabButtonEl = document.getElementById("moderacion-tab-button");
 const widgetTabButtonEl = document.getElementById("widget-tab-button");
+const horarioTabButtonEl = document.getElementById("horario-tab-button");
 const modalOverlayEl = document.getElementById("modal-overlay");
 const modalContentEl = document.getElementById("modal-content");
 
@@ -143,8 +144,10 @@ async function tryEnterPanel() {
     // general (paridad con root en documentos) o dependencia (solo lo suyo).
     dashboardTabButtonEl.hidden = false;
     documentsTabButtonEl.hidden = false;
+    horarioTabButtonEl.hidden = false;
     await loadDashboard();
     await loadDocuments();
+    await loadPanelHorario();
     // El detector de hostilidad es exclusivo del administrador general
     // (igual que recategorizar documentos) -- un administrador de
     // dependencia no ve ni puede tocar esta pestaña.
@@ -890,6 +893,10 @@ function updateConversationHeader(sessionId) {
 
   const parts = [];
   if (session && session.student_email) parts.push(session.student_email);
+  if (session && session.student_phone) parts.push(session.student_phone);
+  if (session && session.needs_human) {
+    parts.push(session.is_connected ? "🟢 En línea ahora" : "⚪ Sin conexión — contáctalo por correo/teléfono");
+  }
   const depStatus = session ? dependenciaStatusText(session) : "";
   if (depStatus) parts.push(depStatus);
 
@@ -1458,6 +1465,153 @@ async function deletePanelWidgetOrigin(origin) {
   } catch {
     // adminFetch ya maneja el caso de sesión inválida.
   }
+}
+
+// --- Horario de atención ---------------------------------------------------
+
+const PANEL_HORARIO_DIA_LABELS = { 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom" };
+
+function panelHorarioRangoRowHtml(inicio, fin) {
+  return `
+    <div class="horario-rango-row">
+      <input type="time" class="horario-rango-inicio" value="${inicio || ""}" required />
+      <span>a</span>
+      <input type="time" class="horario-rango-fin" value="${fin || ""}" required />
+      <button type="button" class="danger remove-rango-button">Quitar</button>
+    </div>
+  `;
+}
+
+function panelHorarioFormHtml(dep) {
+  const diasActuales = new Set(dep.horario_dias || []);
+  const rangosActuales = dep.horario_rangos && dep.horario_rangos.length ? dep.horario_rangos : [["", ""]];
+  return `
+    <form id="panel-horario-form" class="modal-form" data-dependencia-id="${dep.id}">
+      <label>Días de atención</label>
+      <div class="horario-dias-checks">
+        ${Object.entries(PANEL_HORARIO_DIA_LABELS)
+          .map(
+            ([value, label]) => `
+              <label class="horario-dia-check">
+                <input type="checkbox" value="${value}" ${diasActuales.has(Number(value)) ? "checked" : ""} />
+                ${label}
+              </label>
+            `
+          )
+          .join("")}
+      </div>
+      <label>Bloques de horario (uno por franja, ej. mañana y tarde)</label>
+      <div id="panel-horario-rangos-list">
+        ${rangosActuales.map(([inicio, fin]) => panelHorarioRangoRowHtml(inicio, fin)).join("")}
+      </div>
+      <button type="button" id="panel-add-horario-rango-button" class="secondary-button">+ Agregar bloque</button>
+      <p id="panel-horario-form-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button type="submit" class="primary-button">Guardar</button>
+      </div>
+    </form>
+  `;
+}
+
+function wirePanelHorarioForm(onSaved) {
+  const form = document.getElementById("panel-horario-form");
+  const rangosListEl = document.getElementById("panel-horario-rangos-list");
+  const wireRemoveButtons = () => {
+    rangosListEl.querySelectorAll(".remove-rango-button").forEach((btn) => {
+      btn.onclick = () => {
+        if (rangosListEl.children.length > 1) btn.closest(".horario-rango-row").remove();
+      };
+    });
+  };
+  wireRemoveButtons();
+
+  document.getElementById("panel-add-horario-rango-button").addEventListener("click", () => {
+    rangosListEl.insertAdjacentHTML("beforeend", panelHorarioRangoRowHtml("", ""));
+    wireRemoveButtons();
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("panel-horario-form-error");
+    errorEl.hidden = true;
+
+    const dias = Array.from(form.querySelectorAll(".horario-dia-check input:checked")).map((el) => Number(el.value));
+    const rangos = Array.from(rangosListEl.querySelectorAll(".horario-rango-row")).map((row) => ({
+      inicio: row.querySelector(".horario-rango-inicio").value,
+      fin: row.querySelector(".horario-rango-fin").value,
+    }));
+
+    if (dias.length === 0 || rangos.some((r) => !r.inicio || !r.fin)) {
+      errorEl.textContent = "Selecciona al menos un día y completa todos los bloques de horario.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    try {
+      const dependenciaId = form.dataset.dependenciaId;
+      const res = await adminFetch(`/api/admin/dependencias/${dependenciaId}/horario`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dias, rangos }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res));
+      await onSaved();
+    } catch (err) {
+      errorEl.textContent = err.message || "No se pudo guardar, intenta de nuevo.";
+      errorEl.hidden = false;
+    }
+  });
+}
+
+async function loadPanelHorario() {
+  const contentEl = document.getElementById("panel-horario-content");
+  if (getAdminRole() === "dependencia") {
+    const dep = dependenciasForReassign.find((d) => d.id === getAdminDependenciaId());
+    if (!dep) {
+      contentEl.innerHTML = "<p class=\"empty-hint\">No se encontró tu dependencia.</p>";
+      return;
+    }
+    contentEl.innerHTML = panelHorarioFormHtml(dep);
+    wirePanelHorarioForm(async () => {
+      await loadDependenciasForReassign();
+      await loadPanelHorario();
+    });
+    return;
+  }
+
+  // general: tabla con todas las dependencias, cada una editable.
+  const rows = dependenciasForReassign
+    .map(
+      (dep) => `
+        <tr>
+          <td>${escapeHtml(dep.name)}</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="edit-horario-button" data-id="${dep.id}">Editar horario</button>
+            </div>
+          </td>
+        </tr>
+      `
+    )
+    .join("");
+  contentEl.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Dependencia</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="empty-hint" ${dependenciasForReassign.length ? "hidden" : ""}>No hay dependencias configuradas.</p>
+  `;
+  contentEl.querySelectorAll(".edit-horario-button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const dep = dependenciasForReassign.find((d) => d.id === Number(btn.dataset.id));
+      openModal(`<h3>Horario de atención — ${escapeHtml(dep.name)}</h3>${panelHorarioFormHtml(dep)}`);
+      wirePanelHorarioForm(async () => {
+        closeModal();
+        await loadDependenciasForReassign();
+        await loadPanelHorario();
+      });
+    });
+  });
 }
 
 if (getAdminToken()) {

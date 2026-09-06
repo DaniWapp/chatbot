@@ -501,20 +501,32 @@ function connectSessionWebSocket() {
   sessionWs.onerror = () => sessionWs && sessionWs.close();
 }
 
-async function submitEscalation(name, email, container, onError) {
+async function submitEscalation(name, email, container, onError, phone) {
   try {
     const res = await fetch("/api/escalate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, name, email }),
+      body: JSON.stringify({ session_id: sessionId, name, email, phone: phone || null }),
     });
     if (!res.ok) throw new Error("escalate failed");
+    const data = await res.json();
 
     sessionStorage.setItem("chat_student_name", name);
     sessionStorage.setItem("chat_student_email", email);
+    if (phone) sessionStorage.setItem("chat_student_phone", phone);
     isEscalated = true;
     container.remove();
-    addSystemNotice("Hemos escalado tu pregunta a un asesor humano. En breve te contactará aquí mismo.");
+    if (data.within_horario === false) {
+      const horario = data.horario_texto ? ` (horario de atención: ${data.horario_texto})` : "";
+      const contacto = phone
+        ? "Dejaste tu correo y teléfono para que te contacten directamente."
+        : "Dejaste tu correo para que te contacten directamente.";
+      addSystemNotice(
+        `En este momento no hay atención humana disponible${horario}. Tu pregunta quedó guardada para cuando abran. ${contacto}`
+      );
+    } else {
+      addSystemNotice("Hemos escalado tu pregunta a un asesor humano. En breve te contactará aquí mismo.");
+    }
     showEscalationBanner();
     connectSessionWebSocket();
   } catch {
@@ -529,6 +541,7 @@ function showEscalationForm(container) {
       <form class="escalate-form">
         <input type="text" class="escalate-name" placeholder="Nombre completo" required maxlength="200" />
         <input type="email" class="escalate-email" placeholder="Correo electrónico" required maxlength="200" />
+        <input type="tel" class="escalate-phone" placeholder="Teléfono (opcional, por si no hay atención en línea)" maxlength="30" />
         <button type="submit">Enviar</button>
       </form>
     </div>
@@ -538,18 +551,25 @@ function showEscalationForm(container) {
     e.preventDefault();
     const name = form.querySelector(".escalate-name").value.trim();
     const email = form.querySelector(".escalate-email").value.trim();
+    const phone = form.querySelector(".escalate-phone").value.trim();
     if (!name || !email) return;
 
     const submitBtn = form.querySelector("button[type=submit]");
     submitBtn.disabled = true;
 
-    submitEscalation(name, email, container, () => {
-      submitBtn.disabled = false;
-      const errorEl = document.createElement("p");
-      errorEl.className = "escalate-error";
-      errorEl.textContent = "No se pudo enviar, intenta de nuevo.";
-      form.appendChild(errorEl);
-    });
+    submitEscalation(
+      name,
+      email,
+      container,
+      () => {
+        submitBtn.disabled = false;
+        const errorEl = document.createElement("p");
+        errorEl.className = "escalate-error";
+        errorEl.textContent = "No se pudo enviar, intenta de nuevo.";
+        form.appendChild(errorEl);
+      },
+      phone
+    );
   });
 }
 
@@ -592,11 +612,18 @@ function addEscalationOption(block) {
   button.addEventListener("click", () => {
     const savedName = sessionStorage.getItem("chat_student_name");
     const savedEmail = sessionStorage.getItem("chat_student_email");
+    const savedPhone = sessionStorage.getItem("chat_student_phone");
     if (savedName && savedEmail) {
       button.disabled = true;
-      submitEscalation(savedName, savedEmail, container, () => {
-        button.disabled = false;
-      });
+      submitEscalation(
+        savedName,
+        savedEmail,
+        container,
+        () => {
+          button.disabled = false;
+        },
+        savedPhone
+      );
     } else {
       showEscalationForm(container);
     }
