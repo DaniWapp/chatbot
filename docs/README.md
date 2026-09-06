@@ -14,6 +14,11 @@ detallados, y guías para usuarios concretos.
 - **[casos-de-uso.md](casos-de-uso.md)** -- catálogo completo de casos de
   uso (actor, precondición, flujo principal y alterno, postcondición)
   para cada actor del sistema, incluidos los procesos automáticos.
+- **[diagramas-de-secuencia.md](diagramas-de-secuencia.md)** -- los
+  mismos mecanismos reales, en diagramas de secuencia (Mermaid): pregunta
+  al asistente, escalamiento y respuesta del asesor, auto-escalamiento
+  por SLA, subida e indexación de documentos, sugerencias de FAQ,
+  moderación y el widget embebible.
 
 ## Para presentar/exponer el proyecto
 
