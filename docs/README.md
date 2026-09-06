@@ -11,6 +11,9 @@ detallados, y guías para usuarios concretos.
 - **[manual-usuario.md](manual-usuario.md)** -- guía de uso para
   estudiantes (el chat), asesores (`/panel`) y administradores (`/root`):
   qué hace cada botón y cada pantalla.
+- **[casos-de-uso.md](casos-de-uso.md)** -- catálogo completo de casos de
+  uso (actor, precondición, flujo principal y alterno, postcondición)
+  para cada actor del sistema, incluidos los procesos automáticos.
 
 ## Para presentar/exponer el proyecto
 
