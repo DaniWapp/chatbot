@@ -14,7 +14,13 @@ from typing import Generator, List, Tuple
 from app.config import settings
 from app.models.schemas import ChatMetrics, ChatResponse, SourceCitation
 from app.rag import llm, reranker
-from app.rag.retriever import RetrievedChunk, build_context, retrieve, retrieve_below_threshold
+from app.rag.retriever import (
+    RetrievedChunk,
+    build_context,
+    drop_superseded_by_vigencia,
+    retrieve,
+    retrieve_below_threshold,
+)
 from app.services import answer_cache_service
 from app.services import history as history_service
 from app.services import ws_manager
@@ -132,6 +138,7 @@ def _try_multi_query_rewrite(
             combined = reranker.rerank(question, combined, settings.TOP_K, settings.RERANK_MIN_SCORE)
         else:
             combined = combined[: settings.TOP_K]
+        combined = drop_superseded_by_vigencia(question, combined)
     if combined:
         chunks = combined
         retrieval_question = variations[0]

@@ -157,6 +157,13 @@ def _get_connection() -> sqlite3.Connection:
             )
             """
         )
+        # NULL = documento general sin caducidad, nunca compite por vigencia
+        # contra otros (ver app/rag/retriever.py::_drop_superseded_by_vigencia).
+        # Con valor: fecha ISO ("YYYY-MM-DD") desde la cual ese documento
+        # aplica -- entre documentos que responden la misma pregunta, gana
+        # el de vigencia más reciente (salvo que la pregunta pida
+        # explícitamente el año de uno más viejo).
+        _ensure_column(_connection, "document_dependencias", "vigente_desde", "TEXT")
 
         # Propuestas de preguntas frecuentes generadas automáticamente al
         # resolver una conversación escalada (ver

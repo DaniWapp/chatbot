@@ -144,17 +144,84 @@ function addAssistantMessage(text, turnCreatedAt, initialRating) {
   scrollToBottom();
 }
 
+const DOWNLOAD_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>' +
+  '<polyline points="7 10 12 15 17 10"></polyline>' +
+  '<line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+
+// Restricción del lado del cliente: mientras haya una descarga en curso (en
+// cualquier mensaje de la conversación), se deshabilitan todos los botones
+// de descarga -- el backend además rechaza con 429 si esta misma sesión
+// intenta iniciar otra en paralelo (ver /api/documents/{filename}/download).
+let isDownloadInProgress = false;
+
+function setDownloadButtonsDisabled(disabled) {
+  document.querySelectorAll(".source-download-button").forEach((btn) => {
+    btn.disabled = disabled;
+  });
+}
+
+async function downloadDocument(filename, button) {
+  if (isDownloadInProgress) return;
+  isDownloadInProgress = true;
+  setDownloadButtonsDisabled(true);
+  button.classList.add("downloading");
+
+  try {
+    const res = await fetch(`/api/documents/${encodeURIComponent(filename)}/download?session_id=${encodeURIComponent(sessionId)}`);
+    if (!res.ok) {
+      button.title = res.status === 429 ? "Ya hay una descarga en curso, espera un momento." : "No se pudo descargar el archivo.";
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    button.title = "No se pudo descargar el archivo.";
+  } finally {
+    button.classList.remove("downloading");
+    isDownloadInProgress = false;
+    setDownloadButtonsDisabled(false);
+  }
+}
+
 function renderSources(block, sources) {
   if (!sources || sources.length === 0) return;
   const container = document.createElement("div");
   container.className = "sources";
-  const items = sources
-    .map((s) => {
-      const page = s.page !== null && s.page !== undefined ? ` — página ${s.page}` : "";
-      return `<li>${escapeHtml(s.document)}${page}</li>`;
-    })
-    .join("");
-  container.innerHTML = `<div class="sources-title">Archivos consultados:</div><ul>${items}</ul>`;
+  const title = document.createElement("div");
+  title.className = "sources-title";
+  title.textContent = "Archivos consultados:";
+  container.appendChild(title);
+
+  const list = document.createElement("ul");
+  sources.forEach((s) => {
+    const item = document.createElement("li");
+    const page = s.page !== null && s.page !== undefined ? ` — página ${s.page}` : "";
+    const label = document.createElement("span");
+    label.textContent = `${s.document}${page}`;
+    item.appendChild(label);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "source-download-button";
+    button.title = "Descargar archivo";
+    button.setAttribute("aria-label", `Descargar ${s.document}`);
+    button.innerHTML = DOWNLOAD_ICON_SVG;
+    button.disabled = isDownloadInProgress;
+    button.addEventListener("click", () => downloadDocument(s.document, button));
+    item.appendChild(button);
+
+    list.appendChild(item);
+  });
+  container.appendChild(list);
   block.appendChild(container);
 }
 

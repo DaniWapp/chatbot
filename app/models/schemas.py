@@ -216,10 +216,12 @@ class DocumentInfo(BaseModel):
     filename: str
     size_bytes: int
     dependencia_id: Optional[int] = None
+    vigente_desde: Optional[str] = None
 
 
 class DocumentRecategorizeRequest(BaseModel):
     dependencia_id: Optional[int] = None
+    vigente_desde: Optional[str] = None
 
 
 class DocumentPreviewResponse(BaseModel):

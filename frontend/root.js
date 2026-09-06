@@ -773,6 +773,7 @@ function renderDocumentsTable() {
       <td>${escapeHtml(doc.filename)}</td>
       <td>${formatSize(doc.size_bytes)}</td>
       <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select></td>
+      <td><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
       <td>
         <div class="row-actions">
           <button type="button" class="preview-button">Vista previa</button>
@@ -781,7 +782,14 @@ function renderDocumentsTable() {
       </td>
     `;
     const select = tr.querySelector(".doc-dependencia-select");
-    select.addEventListener("change", () => recategorizeDocument(doc, select));
+    select.addEventListener("change", () => {
+      const dependenciaId = select.value === "" ? null : Number(select.value);
+      recategorizeDocument(doc, { dependenciaId });
+    });
+    const vigenciaInput = tr.querySelector(".doc-vigencia-input");
+    vigenciaInput.addEventListener("change", () => {
+      recategorizeDocument(doc, { vigenteDesde: vigenciaInput.value || null });
+    });
     tr.querySelector(".preview-button").addEventListener("click", () => previewDocument(doc.filename, "/api/root/documents"));
     tr.querySelector(".delete-button").addEventListener("click", () => deleteDocument(doc));
     tbody.appendChild(tr);
@@ -819,21 +827,22 @@ async function previewDocument(filename, basePath) {
   }
 }
 
-async function recategorizeDocument(doc, selectEl) {
-  const dependenciaId = selectEl.value === "" ? null : Number(selectEl.value);
-  selectEl.disabled = true;
+async function recategorizeDocument(doc, { dependenciaId, vigenteDesde } = {}) {
+  // Cada PUT manda los dos campos siempre -- si solo se editó uno, el otro
+  // se rellena con el valor actual del documento, para no borrarlo sin
+  // querer (el backend reemplaza ambos, no hace merge parcial).
+  const finalDependenciaId = dependenciaId !== undefined ? dependenciaId : doc.dependencia_id ?? null;
+  const finalVigenteDesde = vigenteDesde !== undefined ? vigenteDesde : doc.vigente_desde || null;
   try {
     const res = await rootFetch(`/api/root/documents/${encodeURIComponent(doc.filename)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dependencia_id: dependenciaId }),
+      body: JSON.stringify({ dependencia_id: finalDependenciaId, vigente_desde: finalVigenteDesde }),
     });
     if (!res.ok) alert(await errorDetail(res));
     await loadDocuments();
   } catch {
     // rootFetch ya maneja el caso de sesión inválida.
-  } finally {
-    selectEl.disabled = false;
   }
 }
 
@@ -856,7 +865,7 @@ document.getElementById("documents-search").addEventListener("input", renderDocu
 document.getElementById("new-document-button").addEventListener("click", () => {
   openModal(`
     <h3>Subir documento</h3>
-    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos -- el archivo original no se conserva en el servidor, solo su contenido.</p>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo.</p>
     <form id="upload-document-form" class="modal-form">
       <label>Archivo (PDF, TXT, DOCX o XLSX)
         <input id="upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />
@@ -867,6 +876,10 @@ document.getElementById("new-document-button").addEventListener("click", () => {
           ${dependencias.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join("")}
         </select>
       </label>
+      <label>Vigente desde (opcional)
+        <input id="upload-document-vigencia" type="date" />
+      </label>
+      <p class="modal-hint">Solo para documentos que se reemplazan con el tiempo (calendarios, precios, etc.): si dos documentos responden la misma pregunta, gana el de fecha más reciente -- puede ser una fecha futura si ya se sabe que ese documento aplicará desde entonces. Déjalo vacío para documentos generales que no vencen.</p>
       <p id="upload-document-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="cancel-button">Cancelar</button>
@@ -880,6 +893,7 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     const errorEl = document.getElementById("upload-document-error");
     const fileInput = document.getElementById("upload-document-file");
     const dependenciaValue = document.getElementById("upload-document-dependencia").value;
+    const vigenciaValue = document.getElementById("upload-document-vigencia").value;
     const file = fileInput.files[0];
     if (!file) return;
 
@@ -890,6 +904,7 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     const formData = new FormData();
     formData.append("file", file);
     if (dependenciaValue) formData.append("dependencia_id", dependenciaValue);
+    if (vigenciaValue) formData.append("vigente_desde", vigenciaValue);
 
     try {
       const res = await rootFetch("/api/root/documents", { method: "POST", body: formData });

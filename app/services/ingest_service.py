@@ -69,6 +69,34 @@ def set_document_dependencia(filename: str, dependencia_id: Optional[int]) -> No
         conn.commit()
 
 
+def get_document_vigencia(filename: str) -> Optional[str]:
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT vigente_desde FROM document_dependencias WHERE filename = ?", (filename,)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def set_document_vigencia(filename: str, vigente_desde: Optional[str]) -> None:
+    """NULL marca el documento como general/sin caducidad -- nunca compite
+    por vigencia contra otros documentos en la búsqueda (ver
+    app/rag/retriever.py::_drop_superseded_by_vigencia)."""
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            """
+            INSERT INTO document_dependencias (filename, vigente_desde, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(filename) DO UPDATE SET
+                vigente_desde = excluded.vigente_desde,
+                updated_at = excluded.updated_at
+            """,
+            (filename, vigente_desde, _now()),
+        )
+        conn.commit()
+
+
 def delete_document_dependencia(filename: str) -> None:
     with history.db_lock():
         conn = history.get_connection()

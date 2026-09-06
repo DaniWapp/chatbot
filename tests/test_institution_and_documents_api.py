@@ -356,17 +356,20 @@ def test_general_admin_can_preview_any_document(tmp_path, monkeypatch):
     assert res.status_code == 200
 
 
-# --- Conversión automática de PDF/DOCX a TXT al subir, sin conservar el original ---
+# --- Conversión automática de PDF/DOCX a TXT al subir, conservando el original aparte ---
 
 
-def test_upload_docx_converts_to_txt_and_discards_original(tmp_path, monkeypatch):
+def test_upload_docx_converts_to_txt_and_keeps_original_separately(tmp_path, monkeypatch):
     """Extremo a extremo con un DOCX real (sin mockear la extracción) --
-    confirma que solo queda el .txt, con el texto real del documento, y que
-    el .docx original no se conserva en el servidor."""
+    confirma que en DOCUMENTS_DIR solo queda el .txt (con el texto real del
+    documento), y que el .docx original se conserva en DOCUMENT_ORIGINALS_DIR
+    en vez de descartarse."""
     from docx import Document as DocxDocument
     from app.config import settings
 
     monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
     token = _login_as()
 
     docx_bytes_path = tmp_path / "_source.docx"
@@ -393,19 +396,25 @@ def test_upload_docx_converts_to_txt_and_discards_original(tmp_path, monkeypatch
     assert txt_path.exists()
     assert "Contenido real de prueba" in txt_path.read_text(encoding="utf-8")
 
+    original_path = originals_dir / "Convertible.docx"
+    assert original_path.exists()
+    assert original_path.read_bytes() == content
+
     docs = client.get("/api/root/documents", headers=_auth(token)).json()
     filenames = {d["filename"] for d in docs}
     assert "Convertible.txt" in filenames
     assert "Convertible.docx" not in filenames
 
 
-def test_upload_pdf_converts_to_txt_and_discards_original(tmp_path, monkeypatch):
+def test_upload_pdf_converts_to_txt_and_keeps_original_separately(tmp_path, monkeypatch):
     """La extracción de PDF ya está cubierta a fondo en test_document_loader.py
-    -- aquí se mockea load_document para probar solo la lógica nueva de
-    conversión/descarte del original en la ruta de subida."""
+    -- aquí se mockea load_document para probar solo la lógica de
+    conversión y de conservar el original en DOCUMENT_ORIGINALS_DIR."""
     from app.config import settings
 
     monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
     token = _login_as()
 
     from app.rag.document_loader import LoadedDocument, PageText
@@ -413,6 +422,7 @@ def test_upload_pdf_converts_to_txt_and_discards_original(tmp_path, monkeypatch)
     fake_document = LoadedDocument(
         filename="Reporte.pdf", pages=[PageText(page_number=1, text="Texto extraído del PDF de prueba.")]
     )
+    pdf_bytes = b"%PDF-1.4 contenido falso, la extraccion esta mockeada"
 
     with (
         patch("app.api.routes.load_document", return_value=fake_document),
@@ -422,7 +432,7 @@ def test_upload_pdf_converts_to_txt_and_discards_original(tmp_path, monkeypatch)
     ):
         res = client.post(
             "/api/root/documents",
-            files={"file": ("Reporte.pdf", b"%PDF-1.4 contenido falso, la extraccion esta mockeada", "application/pdf")},
+            files={"file": ("Reporte.pdf", pdf_bytes, "application/pdf")},
             headers=_auth(token),
         )
 
@@ -431,6 +441,10 @@ def test_upload_pdf_converts_to_txt_and_discards_original(tmp_path, monkeypatch)
     txt_path = tmp_path / "Reporte.txt"
     assert txt_path.exists()
     assert txt_path.read_text(encoding="utf-8") == "Texto extraído del PDF de prueba."
+
+    original_path = originals_dir / "Reporte.pdf"
+    assert original_path.exists()
+    assert original_path.read_bytes() == pdf_bytes
 
 
 def test_upload_pdf_extraction_failure_cleans_up_original(tmp_path, monkeypatch):
@@ -534,6 +548,8 @@ def test_colliding_pdf_and_docx_get_consecutive_names_instead_of_overwriting(tmp
     from app.config import settings
 
     monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
     token = _login_as()
 
     from app.rag.document_loader import LoadedDocument, PageText
@@ -574,6 +590,151 @@ def test_colliding_pdf_and_docx_get_consecutive_names_instead_of_overwriting(tmp
     # Ambos archivos siguen existiendo, con su contenido propio -- ninguno se perdió.
     assert (tmp_path / "Reporte.txt").read_text(encoding="utf-8") == "Contenido del PDF."
     assert (tmp_path / "Reporte (2).txt").read_text(encoding="utf-8") == "Contenido del DOCX."
+
+    # Cada original se guardó con el mismo stem que su .txt (el "(2)"
+    # anti-colisión incluido), así que ninguno se pisó con el otro.
+    assert (originals_dir / "Reporte.pdf").exists()
+    assert (originals_dir / "Reporte (2).docx").exists()
+
+
+def test_download_converted_document_returns_original_not_txt(tmp_path, monkeypatch):
+    """Si el .txt citado tiene un original guardado (PDF/DOCX convertido al
+    subirlo), la descarga debe entregar ese original real, no el .txt
+    derivado -- para eso existe DOCUMENT_ORIGINALS_DIR."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    originals_dir.mkdir()
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+
+    (tmp_path / "Reglamento.txt").write_text("Texto extraído para indexar.", encoding="utf-8")
+    pdf_bytes = b"%PDF-1.4 contenido real del pdf original"
+    (originals_dir / "Reglamento.pdf").write_bytes(pdf_bytes)
+
+    res = client.get("/api/documents/Reglamento.txt/download?session_id=test-download-original")
+
+    assert res.status_code == 200
+    assert res.content == pdf_bytes
+    assert "Reglamento.pdf" in res.headers["content-disposition"]
+
+
+def test_download_native_document_serves_file_as_is(tmp_path, monkeypatch):
+    """Un documento que nunca se convirtió (.txt/.xlsx nativo, sin par en
+    DOCUMENT_ORIGINALS_DIR) sigue descargándose tal cual, sin regresión."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+
+    (tmp_path / "Horario.txt").write_text("Contenido nativo, nunca fue PDF/DOCX.", encoding="utf-8")
+
+    res = client.get("/api/documents/Horario.txt/download?session_id=test-download-native")
+
+    assert res.status_code == 200
+    assert res.content == b"Contenido nativo, nunca fue PDF/DOCX."
+    assert "Horario.txt" in res.headers["content-disposition"]
+
+
+def test_delete_document_also_deletes_stored_original(tmp_path, monkeypatch):
+    """Borrar un documento convertido no debe dejar su original huérfano en
+    DOCUMENT_ORIGINALS_DIR."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    originals_dir.mkdir()
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+    token = _login_as()
+
+    (tmp_path / "Manual.txt").write_text("contenido", encoding="utf-8")
+    (originals_dir / "Manual.docx").write_bytes(b"contenido docx original")
+
+    with patch("app.services.ingest_service.vector_store.remove_document"):
+        res = client.delete("/api/root/documents/Manual.txt", headers=_auth(token))
+
+    assert res.status_code == 200
+    assert not (tmp_path / "Manual.txt").exists()
+    assert not (originals_dir / "Manual.docx").exists()
+
+
+# --- Vigencia por documento (ver app/rag/retriever.py::drop_superseded_by_vigencia) ---
+
+
+def test_upload_document_persists_vigente_desde(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Calendario2027.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            data={"vigente_desde": "2026-11-01"},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "Calendario2027.txt")
+    assert doc["vigente_desde"] == "2026-11-01"
+
+
+def test_upload_document_without_vigente_desde_leaves_it_none(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Reglamento.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "Reglamento.txt")
+    assert doc["vigente_desde"] is None
+
+
+def test_recategorize_document_updates_vigente_desde(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("Calendario2026.txt", b"Contenido de prueba con suficiente longitud.", "text/plain")},
+            headers=_auth(token),
+        )
+
+        res = client.put(
+            "/api/root/documents/Calendario2026.txt",
+            json={"dependencia_id": None, "vigente_desde": "2026-01-01"},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "Calendario2026.txt")
+    assert doc["vigente_desde"] == "2026-01-01"
 
 
 def test_documents_list_is_sorted_newest_first(tmp_path, monkeypatch):

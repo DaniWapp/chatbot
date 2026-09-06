@@ -1,11 +1,15 @@
 """Recuperación semántica: embebe la pregunta, busca en el vector store y
 filtra por umbral de similitud para evitar enviar contexto irrelevante al LLM."""
+import re
 from dataclasses import dataclass
 from typing import List, Optional
 
 from app.config import settings
 from app.rag import reranker, vector_store
 from app.rag.embeddings import embed_query
+from app.services import ingest_service
+
+_YEAR_PATTERN = re.compile(r"\b((?:19|20)\d{2})\b")
 
 
 @dataclass
@@ -29,6 +33,32 @@ def _to_chunk(h: dict) -> RetrievedChunk:
     )
 
 
+def drop_superseded_by_vigencia(question: str, chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+    """Si el resultado incluye chunks de 2+ documentos con vigente_desde
+    asignado, se descartan los de vigencia más antigua -- el documento más
+    reciente los reemplaza (ej. Calendario 2027 sobre Calendario 2026).
+    Excepción: si la pregunta menciona explícitamente un año que coincide
+    con la vigencia de alguno de esos documentos, se respeta ese pedido
+    puntual en vez de imponer el más reciente (ej. "¿cuál es el calendario
+    de 2026?" con ambos calendarios compitiendo debe responder con el de
+    2026). Documentos sin vigente_desde (None) nunca se descartan por esta
+    regla -- son generales, sin caducidad."""
+    vigencias = {c.document: ingest_service.get_document_vigencia(c.document) for c in chunks}
+    con_vigencia = {doc: v for doc, v in vigencias.items() if v}
+    if len(con_vigencia) < 2:
+        return chunks
+
+    years_in_question = set(_YEAR_PATTERN.findall(question))
+    if years_in_question:
+        matching_docs = {doc for doc, v in con_vigencia.items() if v[:4] in years_in_question}
+        if matching_docs:
+            return [c for c in chunks if c.document not in con_vigencia or c.document in matching_docs]
+
+    mas_reciente = max(con_vigencia.values())
+    superados = {doc for doc, v in con_vigencia.items() if v < mas_reciente}
+    return [c for c in chunks if c.document not in superados]
+
+
 def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     """Recupera los fragmentos más relevantes para una pregunta.
 
@@ -50,8 +80,10 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     if not candidates:
         return []
     if not settings.RERANK_ENABLED:
-        return candidates[:top_k]
-    return reranker.rerank(question, candidates, top_k=top_k, min_score=settings.RERANK_MIN_SCORE)
+        result = candidates[:top_k]
+    else:
+        result = reranker.rerank(question, candidates, top_k=top_k, min_score=settings.RERANK_MIN_SCORE)
+    return drop_superseded_by_vigencia(question, result)
 
 
 def retrieve_below_threshold(question: str, top_k: int = None) -> List[RetrievedChunk]:

@@ -336,11 +336,15 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
       const recategorizeControl = isGeneral
         ? `<select class="doc-dependencia-select" data-filename="${escapeHtml(doc.filename)}">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select>`
         : "";
+      const vigenciaCell = isGeneral
+        ? `<td><input type="date" class="doc-vigencia-input" data-filename="${escapeHtml(doc.filename)}" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>`
+        : "";
       return `
         <tr>
           <td>${escapeHtml(doc.filename)}</td>
           <td>${formatSize(doc.size_bytes)}</td>
           ${depCell}
+          ${vigenciaCell}
           <td>
             <div class="row-actions">
               ${recategorizeControl}
@@ -367,7 +371,15 @@ function rerenderPanelDocumentsTable(isGeneral) {
   });
   if (isGeneral) {
     tbody.querySelectorAll(".doc-dependencia-select").forEach((select) => {
-      select.addEventListener("change", () => recategorizePanelDocument(select.dataset.filename, select));
+      select.addEventListener("change", () => {
+        const dependenciaId = select.value === "" ? null : Number(select.value);
+        recategorizePanelDocument(select.dataset.filename, { dependenciaId });
+      });
+    });
+    tbody.querySelectorAll(".doc-vigencia-input").forEach((input) => {
+      input.addEventListener("change", () => {
+        recategorizePanelDocument(input.dataset.filename, { vigenteDesde: input.value || null });
+      });
     });
   }
 }
@@ -388,6 +400,7 @@ async function loadDocuments() {
     <th>Archivo</th>
     <th>Tamaño</th>
     ${isGeneral ? "<th>Dependencia</th>" : ""}
+    ${isGeneral ? "<th>Vigente desde</th>" : ""}
     <th></th>
   `;
 
@@ -402,7 +415,7 @@ function openUploadDocumentModal() {
   const ownDependenciaName = dependenciaNameById(getAdminDependenciaId());
   openModal(`
     <h3>Subir documento</h3>
-    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos -- el archivo original no se conserva en el servidor, solo su contenido.</p>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo.</p>
     ${
       isGeneral
         ? ""
@@ -419,6 +432,10 @@ function openUploadDocumentModal() {
             </label>`
           : ""
       }
+      <label>Vigente desde (opcional)
+        <input id="panel-upload-document-vigencia" type="date" />
+      </label>
+      <p class="modal-hint">Solo para documentos que se reemplazan con el tiempo (calendarios, precios, etc.): si dos documentos responden la misma pregunta, gana el de fecha más reciente -- puede ser una fecha futura si ya se sabe que ese documento aplicará desde entonces. Déjalo vacío para documentos generales que no vencen.</p>
       <p id="panel-upload-document-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="cancel-button">Cancelar</button>
@@ -446,6 +463,8 @@ function openUploadDocumentModal() {
     }
     // Si es administrador de dependencia, no se manda dependencia_id -- el
     // backend fuerza la suya siempre, ignorando cualquier otro valor.
+    const vigenciaValue = document.getElementById("panel-upload-document-vigencia").value;
+    if (vigenciaValue) formData.append("vigente_desde", vigenciaValue);
 
     try {
       const res = await adminFetch("/api/admin/documents", { method: "POST", body: formData });
@@ -465,14 +484,18 @@ function openUploadDocumentModal() {
   });
 }
 
-async function recategorizePanelDocument(filename, selectEl) {
-  const dependenciaId = selectEl.value === "" ? null : Number(selectEl.value);
-  selectEl.disabled = true;
+async function recategorizePanelDocument(filename, { dependenciaId, vigenteDesde } = {}) {
+  // Cada PUT manda los dos campos siempre -- si solo se editó uno, el otro
+  // se rellena con el valor actual del documento, para no borrarlo sin
+  // querer (el backend reemplaza ambos, no hace merge parcial).
+  const doc = allPanelDocuments.find((d) => d.filename === filename);
+  const finalDependenciaId = dependenciaId !== undefined ? dependenciaId : doc?.dependencia_id ?? null;
+  const finalVigenteDesde = vigenteDesde !== undefined ? vigenteDesde : doc?.vigente_desde || null;
   try {
     const res = await adminFetch(`/api/admin/documents/${encodeURIComponent(filename)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dependencia_id: dependenciaId }),
+      body: JSON.stringify({ dependencia_id: finalDependenciaId, vigente_desde: finalVigenteDesde }),
     });
     if (!res.ok) alert(await errorDetail(res));
   } catch {

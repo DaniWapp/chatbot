@@ -96,6 +96,10 @@ class Settings:
 
     # --- Documentos ---
     DOCUMENTS_DIR: Path = BASE_DIR / os.getenv("DOCUMENTS_DIR", "documents")
+    # PDF/DOCX se convierten a .txt al subirlos (ver _CONVERT_TO_TXT_EXTENSIONS
+    # en app/api/routes.py) -- el original se guarda aquí, fuera de
+    # DOCUMENTS_DIR, para que la ingesta siga viendo solo .txt/.xlsx.
+    DOCUMENT_ORIGINALS_DIR: Path = BASE_DIR / os.getenv("DOCUMENT_ORIGINALS_DIR", "document_originals")
     VECTOR_DB_DIR: Path = BASE_DIR / os.getenv("VECTOR_DB_DIR", "vector_db")
     MAX_FILE_SIZE_MB: int = _get_int("MAX_FILE_SIZE_MB", 25)
 

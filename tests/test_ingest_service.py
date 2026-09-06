@@ -5,7 +5,13 @@ sin depender de descargar el modelo real de Sentence Transformers.
 """
 from unittest.mock import patch
 
-from app.services.ingest_service import run_ingestion
+from app.services.ingest_service import (
+    get_document_dependencia,
+    get_document_vigencia,
+    run_ingestion,
+    set_document_dependencia,
+    set_document_vigencia,
+)
 
 
 def _fake_embed_texts(texts):
@@ -74,3 +80,34 @@ def test_ingestion_with_no_documents_reports_error(tmp_path, monkeypatch):
 
     assert result.documents_processed == 0
     assert len(result.errors) == 1
+
+
+# --- Vigencia por documento (ver app/rag/retriever.py::drop_superseded_by_vigencia) ---
+
+
+def test_document_vigencia_defaults_to_none():
+    assert get_document_vigencia("vigencia-test-sin-asignar.txt") is None
+
+
+def test_set_and_get_document_vigencia():
+    set_document_vigencia("vigencia-test-a.txt", "2027-01-01")
+
+    assert get_document_vigencia("vigencia-test-a.txt") == "2027-01-01"
+
+
+def test_set_document_vigencia_does_not_clobber_dependencia_id():
+    set_document_dependencia("vigencia-test-b.txt", 3)
+
+    set_document_vigencia("vigencia-test-b.txt", "2026-06-01")
+
+    assert get_document_dependencia("vigencia-test-b.txt") == 3
+    assert get_document_vigencia("vigencia-test-b.txt") == "2026-06-01"
+
+
+def test_set_document_dependencia_does_not_clobber_vigencia():
+    set_document_vigencia("vigencia-test-c.txt", "2026-06-01")
+
+    set_document_dependencia("vigencia-test-c.txt", 5)
+
+    assert get_document_vigencia("vigencia-test-c.txt") == "2026-06-01"
+    assert get_document_dependencia("vigencia-test-c.txt") == 5

@@ -278,7 +278,7 @@ body {
 }
 
 .feedback-up.voted {
-  color: var(--accent);
+  color: #d6249f;
 }
 
 .feedback-down.voted {
@@ -668,6 +668,48 @@ body {
 .sources ul {
   margin: 0;
   padding-left: 16px;
+}
+
+.sources li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.source-download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.source-download-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.source-download-button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.source-download-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.source-download-button.downloading {
+  color: var(--accent);
 }
 
 .typing-indicator-row {

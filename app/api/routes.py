@@ -2,12 +2,14 @@
 /api/admin/sessions (panel de control), /api/escalate (pedir un asesor humano)."""
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi import File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 from app.api.security import (
     AdminIdentity,
@@ -170,6 +172,60 @@ def submit_feedback(session_id: str, payload: FeedbackRequest) -> dict:
     respuesta reemplaza el voto anterior."""
     history_service.record_feedback(session_id, payload.turn_created_at, payload.rating)
     return {"status": "ok"}
+
+
+# Descargas activas por session_id -- evita que una misma sesión dispare
+# varias descargas a la vez (ej. clic rápido en varios archivos de "Archivos
+# consultados"), sin restringir a otras sesiones/estudiantes entre sí.
+_active_downloads: set = set()
+_active_downloads_lock = threading.Lock()
+
+
+def _try_acquire_download(session_id: str) -> bool:
+    with _active_downloads_lock:
+        if session_id in _active_downloads:
+            return False
+        _active_downloads.add(session_id)
+        return True
+
+
+def _release_download(session_id: str) -> None:
+    with _active_downloads_lock:
+        _active_downloads.discard(session_id)
+
+
+@router.get("/documents/{filename}/download")
+def download_document(filename: str, session_id: str = Query(...)) -> FileResponse:
+    """El estudiante descarga uno de los archivos citados en "Archivos
+    consultados". Público, mismo nivel de confianza que /api/chat. Solo se
+    permite una descarga a la vez por session_id -- si esa sesión ya tiene
+    una en curso, se rechaza con 429 en vez de encolarla, para que un clic
+    rápido sobre varios archivos no dispare lecturas de disco simultáneas."""
+    safe_name = Path(filename).name
+    path = settings.DOCUMENTS_DIR / safe_name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="No existe ese documento.")
+
+    if not _try_acquire_download(session_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Ya tienes una descarga en curso. Espera a que termine e inténtalo de nuevo.",
+        )
+
+    # Si el .txt citado viene de convertir un PDF/DOCX, se entrega el
+    # original real guardado en DOCUMENT_ORIGINALS_DIR en vez del .txt
+    # derivado (ver _find_stored_original). Documentos nativos (.txt/.xlsx)
+    # o convertidos antes de que existiera esta carpeta siguen sirviendo el
+    # .txt tal cual, sin regresión.
+    original = _find_stored_original(safe_name)
+    serve_path = original if original is not None else path
+    download_name = original.name if original is not None else safe_name
+
+    return FileResponse(
+        serve_path,
+        filename=download_name,
+        background=BackgroundTask(_release_download, session_id),
+    )
 
 
 def _broadcast_session_event(session_id: str, event: dict) -> None:
@@ -779,20 +835,40 @@ def _list_documents() -> List[DocumentInfo]:
             filename=path.name,
             size_bytes=path.stat().st_size,
             dependencia_id=ingest_service.get_document_dependencia(path.name),
+            vigente_desde=ingest_service.get_document_vigencia(path.name),
         )
         for path in paths
     ]
 
 
-# PDF y DOCX se convierten a texto plano al subirlos y el original se
-# descarta -- toda reingesta futura (reconstrucción completa, o solo este
-# archivo) vuelve a leer el .txt en vez de re-parsear el PDF/DOCX cada vez
-# (ver docs/notas-mejora-documentos.md: hasta 44x más lento que TXT, y un
-# PDF corrupto puede tardar +60s en cada reconstrucción). XLSX queda
-# excluido a propósito: el chunker indexa cada fila como su propio
-# fragmento (ver chunker.py::_pack_rows), algo atado a la extensión .xlsx
-# que se perdería si se convirtiera a .txt.
+# PDF y DOCX se convierten a texto plano al subirlos -- toda reingesta
+# futura (reconstrucción completa, o solo este archivo) vuelve a leer el
+# .txt en vez de re-parsear el PDF/DOCX cada vez (ver
+# docs/notas-mejora-documentos.md: hasta 44x más lento que TXT, y un PDF
+# corrupto puede tardar +60s en cada reconstrucción). El original se
+# conserva en DOCUMENT_ORIGINALS_DIR (fuera de DOCUMENTS_DIR, así que la
+# ingesta no lo ve) para poder entregarlo si el estudiante lo descarga
+# desde "Archivos consultados" -- ver _find_stored_original y
+# download_document. XLSX queda excluido de la conversión a propósito: el
+# chunker indexa cada fila como su propio fragmento (ver
+# chunker.py::_pack_rows), algo atado a la extensión .xlsx que se
+# perdería si se convirtiera a .txt.
 _CONVERT_TO_TXT_EXTENSIONS = {".pdf", ".docx"}
+
+
+def _find_stored_original(txt_filename: str) -> Optional[Path]:
+    """Dado el nombre final (.txt) de un documento convertido, busca su
+    original guardado en DOCUMENT_ORIGINALS_DIR -- misma convención de
+    nombre: mismo stem que el .txt, con la extensión real. Devuelve None
+    para documentos nativos (.txt/.xlsx, nunca tuvieron conversión) o para
+    uno convertido antes de que existiera esta carpeta (su original ya se
+    descartó permanentemente en su momento)."""
+    stem = Path(txt_filename).stem
+    for ext in _CONVERT_TO_TXT_EXTENSIONS:
+        candidate = settings.DOCUMENT_ORIGINALS_DIR / f"{stem}{ext}"
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _next_available_txt_name(stem: str) -> str:
@@ -810,7 +886,9 @@ def _next_available_txt_name(stem: str) -> str:
     return f"{stem} ({counter}).txt"
 
 
-def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional[int]) -> IngestResponse:
+def _upload_document(
+    content: bytes, raw_filename: str, dependencia_id: Optional[int], vigente_desde: Optional[str] = None
+) -> IngestResponse:
     """Sube un documento a DOCUMENTS_DIR, lo etiqueta con una dependencia
     (None -- general/compartido) y lo ingesta de forma incremental: solo se
     calculan embeddings de este archivo, sin tocar el resto del índice (ver
@@ -819,7 +897,8 @@ def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional
     quién puede elegir qué dependencia vive en cada ruta, no aquí.
 
     Si el archivo es PDF o DOCX, se extrae su texto y se guarda como .txt
-    -- el original NO se conserva en el servidor (ver _CONVERT_TO_TXT_EXTENSIONS)."""
+    -- el original se mueve a DOCUMENT_ORIGINALS_DIR, fuera del alcance de
+    la ingesta (ver _CONVERT_TO_TXT_EXTENSIONS y _find_stored_original)."""
     filename = Path(raw_filename).name  # descarta cualquier ruta de directorio en el nombre
     ext = Path(filename).suffix.lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
@@ -848,25 +927,34 @@ def _upload_document(content: bytes, raw_filename: str, dependencia_id: Optional
         # ambos a "Reporte.txt") -- se le agrega un consecutivo si hace falta.
         final_filename = _next_available_txt_name(original_path.stem)
         (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
-        original_path.unlink()  # solo se conserva el .txt
+        # Se guarda con el stem de final_filename (no el del nombre subido),
+        # para que coincida con el "(2)" anti-colisión que pudo haberse
+        # aplicado -- así _find_stored_original lo encuentra sin ambigüedad.
+        settings.DOCUMENT_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
+        stored_original_path = settings.DOCUMENT_ORIGINALS_DIR / f"{Path(final_filename).stem}{ext}"
+        original_path.rename(stored_original_path)
 
     path = settings.DOCUMENTS_DIR / final_filename
     ingest_service.set_document_dependencia(final_filename, dependencia_id)
+    ingest_service.set_document_vigencia(final_filename, vigente_desde)
 
     result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
     return _ingest_result_to_response(result, final_filename=final_filename)
 
 
-def _recategorize_document(filename: str, dependencia_id: Optional[int]) -> IngestResponse:
-    """Cambia la dependencia de un documento ya subido. El contenido no
-    cambió, pero sus chunks llevan la etiqueta vieja, así que igual hay que
-    reingestarlo (solo a él, no todo el índice) para que quede con la
-    nueva."""
+def _recategorize_document(
+    filename: str, dependencia_id: Optional[int], vigente_desde: Optional[str] = None
+) -> IngestResponse:
+    """Cambia la dependencia (y opcionalmente la vigencia) de un documento
+    ya subido. El contenido no cambió, pero sus chunks llevan la etiqueta
+    vieja, así que igual hay que reingestarlo (solo a él, no todo el
+    índice) para que quede con la nueva."""
     safe_name = Path(filename).name
     path = settings.DOCUMENTS_DIR / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="No existe ese documento.")
     ingest_service.set_document_dependencia(safe_name, dependencia_id)
+    ingest_service.set_document_vigencia(safe_name, vigente_desde)
     result = ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
     return _ingest_result_to_response(result)
 
@@ -877,6 +965,9 @@ def _delete_document(filename: str) -> None:
     if not path.exists():
         raise HTTPException(status_code=404, detail="No existe ese documento.")
     path.unlink()
+    original = _find_stored_original(safe_name)
+    if original is not None:
+        original.unlink()
     ingest_service.delete_document_dependencia(safe_name)
     vector_store.remove_document(safe_name)
 
@@ -923,14 +1014,15 @@ def list_documents_route() -> List[DocumentInfo]:
 async def upload_document_route(
     file: UploadFile = File(...),
     dependencia_id: Optional[int] = Form(default=None),
+    vigente_desde: Optional[str] = Form(default=None),
 ) -> IngestResponse:
     content = await file.read()
-    return _upload_document(content, file.filename, dependencia_id)
+    return _upload_document(content, file.filename, dependencia_id, vigente_desde)
 
 
 @router.put("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
 def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequest) -> IngestResponse:
-    return _recategorize_document(filename, payload.dependencia_id)
+    return _recategorize_document(filename, payload.dependencia_id, payload.vigente_desde)
 
 
 @router.delete("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
@@ -964,6 +1056,7 @@ def list_documents_for_panel(identity: AdminIdentity = Depends(require_conversat
 async def upload_document_for_panel(
     file: UploadFile = File(...),
     dependencia_id: Optional[int] = Form(default=None),
+    vigente_desde: Optional[str] = Form(default=None),
     identity: AdminIdentity = Depends(require_conversation_admin),
 ) -> IngestResponse:
     """Un administrador de dependencia no elige dependencia -- se ignora
@@ -972,7 +1065,7 @@ async def upload_document_for_panel(
     general/compartido. El general sí puede elegir cualquiera, igual que root."""
     effective_dependencia_id = identity.dependencia_id if identity.role == "dependencia" else dependencia_id
     content = await file.read()
-    return _upload_document(content, file.filename, effective_dependencia_id)
+    return _upload_document(content, file.filename, effective_dependencia_id, vigente_desde)
 
 
 @router.put(
@@ -986,7 +1079,7 @@ def recategorize_document_for_panel(
     solo el general puede hacerlo desde el panel (igual que root)."""
     if identity.role != "general":
         raise HTTPException(status_code=403, detail="Solo el administrador general puede recategorizar documentos.")
-    return _recategorize_document(filename, payload.dependencia_id)
+    return _recategorize_document(filename, payload.dependencia_id, payload.vigente_desde)
 
 
 @router.delete(
