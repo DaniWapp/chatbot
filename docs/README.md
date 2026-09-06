@@ -46,6 +46,11 @@ detallados, y guías para usuarios concretos.
 - **[flujo-chat-en-vivo.md](flujo-chat-en-vivo.md)** -- qué pasa, paso a
   paso, desde que se envía una pregunta hasta que llega la respuesta
   (streaming, Groq, métricas).
+- **[flujo-escalamiento-y-atencion-humana.md](flujo-escalamiento-y-atencion-humana.md)**
+  -- qué pasa, paso a paso, desde que un estudiante pide un asesor humano
+  hasta que la conversación se resuelve: enrutamiento a dependencia,
+  permisos de lectura/acción, redirección manual y automática por SLA, y
+  de dónde sale el nombre real del asesor que ve el estudiante.
 - **[flujo-subida-documentos.md](flujo-subida-documentos.md)** -- qué
   pasa, paso a paso, desde que se sube un archivo hasta que queda
   indexado y buscable.
