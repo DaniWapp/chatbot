@@ -164,3 +164,22 @@ de seguridad en el [README.md](../README.md).
 funcionar?**
 El script de evaluación (sección 6) mide esto de forma objetiva y
 repetible, no por impresión subjetiva.
+
+**¿Cómo está desplegado el sistema? (nginx, TLS, proxy inverso)**
+Tres piezas, cada una con un trabajo distinto:
+
+- **nginx**: el servidor que recibe las peticiones públicas de internet
+  antes que nadie. Decide qué hacer con cada una -- aquí, reenviarlas al
+  proceso interno del chatbot.
+- **Reverse proxy (proxy inverso)**: el rol que cumple nginx en este
+  esquema -- se pone *delante* de la aplicación real y le reenvía el
+  tráfico, en vez de exponerla directo a internet. El proceso de FastAPI
+  nunca queda accesible desde afuera, solo nginx.
+- **TLS** (*Transport Layer Security*, sucesor de SSL): el protocolo que
+  cifra la conexión -- es lo que hace que la URL empiece con `https://`
+  en vez de `http://`. Sin esto, cualquiera en la misma red podría leer
+  o alterar el tráfico (contraseñas, conversaciones). Se obtiene gratis
+  con Let's Encrypt.
+
+Ver la tabla de infraestructura en
+[stack-tecnologico.md](stack-tecnologico.md).
