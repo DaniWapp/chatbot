@@ -371,13 +371,13 @@ function addSystemNotice(text) {
   scrollToBottom();
 }
 
-function buildAdvisorMessageEl(text) {
+function buildAdvisorMessageEl(text, advisorName) {
   const block = document.createElement("div");
   block.className = "message-block";
   block.innerHTML = `
     <div class="message-row assistant">
       <div class="bubble advisor-bubble">
-        <div class="sender-label">Asesor</div>
+        <div class="sender-label">${escapeHtml(advisorName || "Asesor")}</div>
         <div class="advisor-text"></div>
       </div>
     </div>
@@ -386,9 +386,9 @@ function buildAdvisorMessageEl(text) {
   return block;
 }
 
-function addAdvisorMessage(text) {
+function addAdvisorMessage(text, advisorName) {
   hideEmptyState();
-  chatWindow.appendChild(buildAdvisorMessageEl(text));
+  chatWindow.appendChild(buildAdvisorMessageEl(text, advisorName));
   scrollToBottom();
 }
 
@@ -397,19 +397,19 @@ function prependHistoryMessages(messages) {
   messages.forEach((m) => {
     if (m.sender === "student") fragment.appendChild(buildUserMessageEl(m.message));
     else if (m.sender === "assistant") fragment.appendChild(buildAssistantMessageEl(m.message, m.created_at, m.feedback_rating));
-    else if (m.sender === "advisor") fragment.appendChild(buildAdvisorMessageEl(m.message));
+    else if (m.sender === "advisor") fragment.appendChild(buildAdvisorMessageEl(m.message, m.sender_name));
   });
   chatWindow.insertBefore(fragment, chatWindow.firstChild);
 }
 
-function addCheckinPrompt(text) {
+function addCheckinPrompt(text, advisorName) {
   hideEmptyState();
   const block = document.createElement("div");
   block.className = "message-block";
   block.innerHTML = `
     <div class="message-row assistant">
       <div class="bubble advisor-bubble">
-        <div class="sender-label">Asesor</div>
+        <div class="sender-label">${escapeHtml(advisorName || "Asesor")}</div>
         <div class="advisor-text"></div>
         <div class="checkin-actions">
           <button type="button" class="checkin-button checkin-yes">Sí, por favor</button>
@@ -477,11 +477,11 @@ function connectSessionWebSocket() {
       return;
     }
     if (data.type === "advisor_message" && data.message_type === "checkin") {
-      addCheckinPrompt(data.message);
+      addCheckinPrompt(data.message, data.advisor_name);
       latestRenderedMessageAt = data.created_at;
       playNotificationSound();
     } else if (data.type === "advisor_message") {
-      addAdvisorMessage(data.message);
+      addAdvisorMessage(data.message, data.advisor_name);
       latestRenderedMessageAt = data.created_at;
       playNotificationSound();
     } else if (data.type === "resolved") {
@@ -699,10 +699,10 @@ function renderHistoryMessage(m, isLast) {
   } else if (m.sender === "assistant") {
     addAssistantMessage(m.message, m.created_at, m.feedback_rating);
   } else if (m.sender === "advisor" && m.message_type === "checkin") {
-    if (isLast) addCheckinPrompt(m.message);
-    else addAdvisorMessage(m.message);
+    if (isLast) addCheckinPrompt(m.message, m.sender_name);
+    else addAdvisorMessage(m.message, m.sender_name);
   } else if (m.sender === "advisor") {
-    addAdvisorMessage(m.message);
+    addAdvisorMessage(m.message, m.sender_name);
   }
   latestRenderedMessageAt = m.created_at;
 }

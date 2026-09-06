@@ -88,6 +88,7 @@ class SessionMessage(BaseModel):
     created_at: str
     message_type: str = "text"  # "text" | "checkin" | "checkin_response"
     feedback_rating: Optional[str] = None  # "up" | "down" | None, solo para respuestas del asistente
+    sender_name: Optional[str] = None  # display_name del admin, solo cuando sender es "advisor"
 
 
 class SessionHistoryPage(BaseModel):

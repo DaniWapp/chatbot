@@ -518,12 +518,15 @@ def reply_to_session(
     mensaje y se transmite en tiempo real tanto al panel (otros asesores de
     la misma dependencia) como al chat del estudiante."""
     _ensure_admin_can_act_on_session(session_id, identity)
-    created_at = history_service.add_admin_message(session_id, "advisor", payload.message)
+    created_at = history_service.add_admin_message(
+        session_id, "advisor", payload.message, sender_name=identity.display_name
+    )
     event = {
         "type": "advisor_message",
         "session_id": session_id,
         "message": payload.message,
         "created_at": created_at,
+        "advisor_name": identity.display_name,
     }
     _broadcast_session_event(session_id, event)
     ws_manager.broadcast_to_session(session_id, event)
@@ -557,13 +560,16 @@ def ask_continue(session_id: str, identity: AdminIdentity = Depends(require_conv
     /sessions/{session_id}/checkin-response."""
     _ensure_admin_can_act_on_session(session_id, identity)
     message = "¿Te puedo ayudar con algo más?"
-    created_at = history_service.add_admin_message(session_id, "advisor", message, message_type="checkin")
+    created_at = history_service.add_admin_message(
+        session_id, "advisor", message, message_type="checkin", sender_name=identity.display_name
+    )
     event = {
         "type": "advisor_message",
         "session_id": session_id,
         "message": message,
         "message_type": "checkin",
         "created_at": created_at,
+        "advisor_name": identity.display_name,
     }
     _broadcast_session_event(session_id, event)
     ws_manager.broadcast_to_session(session_id, event)

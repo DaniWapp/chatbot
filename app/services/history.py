@@ -99,6 +99,11 @@ def _get_connection() -> sqlite3.Connection:
         _connection.execute("CREATE INDEX IF NOT EXISTS idx_admin_messages_session ON admin_messages(session_id)")
         _ensure_column(_connection, "session_meta", "resolved_by", "TEXT")
         _ensure_column(_connection, "admin_messages", "message_type", "TEXT NOT NULL DEFAULT 'text'")
+        # display_name del admin que escribió el mensaje (solo sender="advisor")
+        # -- para mostrarle al estudiante quién le está respondiendo en vez de
+        # la etiqueta genérica "Asesor". NULL en mensajes de estudiante y en
+        # los guardados antes de este cambio.
+        _ensure_column(_connection, "admin_messages", "sender_name", "TEXT")
         # Teléfono opcional al escalar -- contacto alterno si no hay
         # atención en línea (ver app/services/admin_service.py::is_within_horario
         # y app/api/routes.py::escalate).
@@ -530,12 +535,16 @@ def resolve_session(session_id: str, resolved_by: str) -> str:
     return resolved_at
 
 
-def add_admin_message(session_id: str, sender: str, message: str, message_type: str = "text") -> str:
+def add_admin_message(
+    session_id: str, sender: str, message: str, message_type: str = "text", sender_name: Optional[str] = None
+) -> str:
     """Guarda un mensaje intercambiado tras el escalamiento. sender es
     'student' o 'advisor'. message_type es 'text' salvo para el chequeo
     "¿Te puedo ayudar con algo más?" ('checkin') y la respuesta del
-    estudiante a ese chequeo ('checkin_response'). Devuelve el timestamp
-    guardado.
+    estudiante a ese chequeo ('checkin_response'). sender_name es el
+    display_name del admin (solo cuando sender es 'advisor') -- se guarda
+    junto al mensaje para poder mostrárselo al estudiante después, incluso
+    releyendo el historial. Devuelve el timestamp guardado.
 
     Si sender es 'advisor', además marca first_response_at (solo la
     primera vez desde la asignación actual, ver escalate_session/
@@ -546,8 +555,9 @@ def add_admin_message(session_id: str, sender: str, message: str, message_type: 
     with _lock:
         conn = _get_connection()
         conn.execute(
-            "INSERT INTO admin_messages (session_id, sender, message, created_at, message_type) VALUES (?, ?, ?, ?, ?)",
-            (session_id, sender, message, created_at, message_type),
+            "INSERT INTO admin_messages (session_id, sender, message, created_at, message_type, sender_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, sender, message, created_at, message_type, sender_name),
         )
         if sender == "advisor":
             conn.execute(
@@ -936,7 +946,8 @@ def _get_full_history_all(session_id: str) -> List[dict]:
             (session_id,),
         ).fetchall()
         admin_rows = conn.execute(
-            "SELECT sender, message, created_at, message_type FROM admin_messages WHERE session_id = ? ORDER BY id ASC",
+            "SELECT sender, message, created_at, message_type, sender_name FROM admin_messages "
+            "WHERE session_id = ? ORDER BY id ASC",
             (session_id,),
         ).fetchall()
         feedback_rows = conn.execute(
@@ -952,8 +963,16 @@ def _get_full_history_all(session_id: str) -> List[dict]:
         if created_at in feedback_by_turn:
             assistant_message["feedback_rating"] = feedback_by_turn[created_at]
         messages.append(assistant_message)
-    for sender, message, created_at, message_type in admin_rows:
-        messages.append({"sender": sender, "message": message, "created_at": created_at, "message_type": message_type})
+    for sender, message, created_at, message_type, sender_name in admin_rows:
+        messages.append(
+            {
+                "sender": sender,
+                "message": message,
+                "created_at": created_at,
+                "message_type": message_type,
+                "sender_name": sender_name,
+            }
+        )
 
     for i, m in enumerate(messages):
         m["_seq"] = i
