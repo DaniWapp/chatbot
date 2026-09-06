@@ -237,6 +237,20 @@ def download_document(filename: str, session_id: str = Query(...)) -> FileRespon
     )
 
 
+def _advisor_label(identity: AdminIdentity) -> str:
+    """Nombre a mostrarle al estudiante como remitente de un mensaje de
+    asesor: el display_name del admin y, si tiene una dependencia
+    vinculada (rol 'dependencia'), su nombre al lado. root y general no
+    están vinculados a ninguna dependencia en particular, así que para
+    ellos se muestra solo el nombre."""
+    if identity.dependencia_id is None:
+        return identity.display_name
+    dependencia = admin_service.get_dependencia(identity.dependencia_id)
+    if not dependencia:
+        return identity.display_name
+    return f"{identity.display_name} · {dependencia['name']}"
+
+
 def _broadcast_session_event(session_id: str, event: dict) -> None:
     """Envía un evento a los administradores de la dependencia actualmente
     asignada a esta sesión (o al general, si no tiene ninguna) -- el
@@ -518,15 +532,16 @@ def reply_to_session(
     mensaje y se transmite en tiempo real tanto al panel (otros asesores de
     la misma dependencia) como al chat del estudiante."""
     _ensure_admin_can_act_on_session(session_id, identity)
+    advisor_name = _advisor_label(identity)
     created_at = history_service.add_admin_message(
-        session_id, "advisor", payload.message, sender_name=identity.display_name
+        session_id, "advisor", payload.message, sender_name=advisor_name
     )
     event = {
         "type": "advisor_message",
         "session_id": session_id,
         "message": payload.message,
         "created_at": created_at,
-        "advisor_name": identity.display_name,
+        "advisor_name": advisor_name,
     }
     _broadcast_session_event(session_id, event)
     ws_manager.broadcast_to_session(session_id, event)
@@ -560,8 +575,9 @@ def ask_continue(session_id: str, identity: AdminIdentity = Depends(require_conv
     /sessions/{session_id}/checkin-response."""
     _ensure_admin_can_act_on_session(session_id, identity)
     message = "¿Te puedo ayudar con algo más?"
+    advisor_name = _advisor_label(identity)
     created_at = history_service.add_admin_message(
-        session_id, "advisor", message, message_type="checkin", sender_name=identity.display_name
+        session_id, "advisor", message, message_type="checkin", sender_name=advisor_name
     )
     event = {
         "type": "advisor_message",
@@ -569,7 +585,7 @@ def ask_continue(session_id: str, identity: AdminIdentity = Depends(require_conv
         "message": message,
         "message_type": "checkin",
         "created_at": created_at,
-        "advisor_name": identity.display_name,
+        "advisor_name": advisor_name,
     }
     _broadcast_session_event(session_id, event)
     ws_manager.broadcast_to_session(session_id, event)
