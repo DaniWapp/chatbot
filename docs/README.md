@@ -53,3 +53,7 @@ detallados, y guías para usuarios concretos.
   se convierte en un vector de 384 números paso a paso (tokenización,
   contextualización, pooling, normalización), con ejemplos reales
   generados corriendo el modelo del proyecto.
+- **[widget-embebible.md](widget-embebible.md)** -- cómo funciona el chat
+  embebido en otros sitios: el loader, la página `/widget`, y la
+  restricción CSP `frame-ancestors` que arma el backend dinámicamente
+  desde la lista de orígenes permitidos.

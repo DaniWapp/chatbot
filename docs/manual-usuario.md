@@ -271,6 +271,26 @@ aquí, pendiente de revisión (evitando duplicar una FAQ que ya existe):
    ya puede responder esa pregunta a partir de ese momento.
 4. **"Descartar"**: la propuesta se elimina sin agregarse a ningún documento.
 
+### 4.7 Pestaña "Widget"
+
+Aquí se controla en qué sitios externos se puede embeber el chat como una
+burbuja flotante (ver [widget-embebible.md](widget-embebible.md) para el
+detalle técnico). Por defecto la lista está vacía y **nadie** puede
+embeberlo -- hay que autorizar cada sitio explícitamente:
+
+1. Escribe la URL del sitio (puede ser cualquier página de ese dominio,
+   p. ej. `https://facultad.edu.co/inicio` -- solo se guarda el dominio)
+   y presiona **"Agregar"**.
+2. Copia el código que aparece debajo de la tabla
+   (`<script src="...">`) y pégalo en el HTML del sitio autorizado --
+   ahí aparecerá el botón flotante del chat.
+3. **"Eliminar"** revoca el permiso de inmediato; ese sitio deja de poder
+   mostrar el chat en cargas nuevas de su página (una pestaña que ya tenía
+   el chat abierto sigue funcionando hasta que se recargue).
+
+Esta pestaña también existe en `/panel` para el administrador general
+(no para dependencia).
+
 ---
 
 ## 5. Preguntas frecuentes / solución de problemas
