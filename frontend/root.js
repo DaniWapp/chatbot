@@ -66,6 +66,7 @@ async function tryEnterApp() {
     await loadAdmins();
     await loadDocuments(); // depende de que dependencias ya esté cargado (nombres en la tabla)
     await loadFaqCandidates();
+    await loadHostilityKeywords();
     adminDisplayNameEl.textContent = localStorage.getItem(DISPLAY_NAME_KEY) || "";
     authGateEl.hidden = true;
     rootAppEl.hidden = false;
@@ -1018,6 +1019,68 @@ function renderFaqCandidates() {
     });
 
     container.appendChild(card);
+  }
+}
+
+// --- Moderación: detector de hostilidad -----------------------------------
+
+async function loadHostilityKeywords() {
+  const res = await rootFetch("/api/root/hostility-keywords");
+  const keywords = await res.json();
+  renderHostilityKeywordsTable(keywords);
+}
+
+function renderHostilityKeywordsTable(keywords) {
+  const tbody = document.getElementById("hostility-keywords-table-body");
+  const emptyEl = document.getElementById("hostility-keywords-empty");
+  tbody.innerHTML = "";
+  emptyEl.hidden = keywords.length > 0;
+
+  for (const keyword of keywords) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(keyword.phrase)}</td>
+      <td><button type="button" class="danger delete-hostility-keyword-button">Eliminar</button></td>
+    `;
+    tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deleteHostilityKeyword(keyword));
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("new-hostility-keyword-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("new-hostility-keyword-input");
+  const errorEl = document.getElementById("hostility-keyword-error");
+  const phrase = input.value.trim();
+  if (!phrase) return;
+
+  errorEl.hidden = true;
+  try {
+    const res = await rootFetch("/api/root/hostility-keywords", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phrase }),
+    });
+    if (!res.ok) {
+      errorEl.textContent = await errorDetail(res);
+      errorEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    await loadHostilityKeywords();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+});
+
+async function deleteHostilityKeyword(keyword) {
+  if (!confirm(`¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`)) return;
+  try {
+    const res = await rootFetch(`/api/root/hostility-keywords/${keyword.id}`, { method: "DELETE" });
+    if (!res.ok) alert(await errorDetail(res));
+    await loadHostilityKeywords();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
   }
 }
 

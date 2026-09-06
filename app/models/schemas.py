@@ -164,6 +164,15 @@ class DependenciaResponse(BaseModel):
     created_at: str
 
 
+class HostilityKeywordCreateRequest(BaseModel):
+    phrase: str = Field(..., min_length=1, max_length=200)
+
+
+class HostilityKeywordResponse(BaseModel):
+    id: int
+    phrase: str
+
+
 AdminRole = Literal["root", "general", "dependencia"]
 
 

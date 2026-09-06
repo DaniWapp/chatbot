@@ -94,6 +94,12 @@ class Settings:
     LOGIN_RATE_LIMIT_MAX: int = _get_int("LOGIN_RATE_LIMIT_MAX", 10)
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = _get_int("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300)
 
+    # --- Detector de hostilidad (app/services/hostility_service.py) ---
+    # Cuántos mensajes hostiles seguidos (por session_id) antes de bloquear
+    # esa sesión, y por cuántas horas.
+    HOSTILITY_STRIKE_LIMIT: int = _get_int("HOSTILITY_STRIKE_LIMIT", 3)
+    HOSTILITY_BLOCK_HOURS: float = _get_float("HOSTILITY_BLOCK_HOURS", 2.0)
+
     # --- Documentos ---
     DOCUMENTS_DIR: Path = BASE_DIR / os.getenv("DOCUMENTS_DIR", "documents")
     # PDF/DOCX se convierten a .txt al subirlos (ver _CONVERT_TO_TXT_EXTENSIONS

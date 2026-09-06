@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=36" />
+  <link rel="stylesheet" href="/static/panel.css?v=37" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -43,6 +43,7 @@
       <button class="panel-tab active" data-tab="conversaciones" type="button">Conversaciones</button>
       <button class="panel-tab" data-tab="dashboard" type="button" id="dashboard-tab-button" hidden>Dashboard</button>
       <button class="panel-tab" data-tab="documentos" type="button" id="documents-tab-button" hidden>Documentos</button>
+      <button class="panel-tab" data-tab="moderacion" type="button" id="moderacion-tab-button" hidden>Moderación</button>
     </nav>
 
     <div id="tab-conversaciones" class="panel-tab-panel panel-body">
@@ -147,6 +148,32 @@
       </table>
       <p id="panel-documents-empty" class="empty-hint" hidden></p>
     </section>
+
+    <section id="tab-moderacion" class="panel-tab-panel" hidden>
+      <div class="panel-section-header">
+        <h2>Moderación</h2>
+      </div>
+      <p class="panel-section-hint">
+        Palabras y frases que activan el detector de hostilidad hacia el chatbot.
+        Tras varios avisos seguidos en la misma sesión, ese chat se bloquea
+        temporalmente.
+      </p>
+      <form id="panel-new-hostility-keyword-form" class="hostility-add-form">
+        <input id="panel-new-hostility-keyword-input" type="text" class="search-input" placeholder="Nueva palabra o frase..." required maxlength="200" />
+        <button type="submit" class="primary-button">Agregar</button>
+      </form>
+      <p id="panel-hostility-keyword-error" class="modal-error" hidden></p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Palabra / frase</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="panel-hostility-keywords-table-body"></tbody>
+      </table>
+      <p id="panel-hostility-keywords-empty" class="empty-hint" hidden>No hay palabras configuradas.</p>
+    </section>
   </div>
 
   <div id="modal-overlay" class="modal-overlay" hidden>
@@ -157,6 +184,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/panel.js?v=37"></script>
+  <script src="/static/panel.js?v=38"></script>
 </body>
 </html>

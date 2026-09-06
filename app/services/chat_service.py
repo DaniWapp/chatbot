@@ -23,6 +23,7 @@ from app.rag.retriever import (
 )
 from app.services import answer_cache_service
 from app.services import history as history_service
+from app.services import hostility_service
 from app.services import ws_manager
 
 
@@ -247,6 +248,17 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
             metrics=ChatMetrics(retrieval_ms=0.0, generation_ms=0.0, total_ms=0.0, chunks_retrieved=0),
         )
 
+    hostility_notice = hostility_service.check_and_intercept(session_id, question)
+    if hostility_notice is not None:
+        response = ChatResponse(
+            answer=hostility_notice,
+            sources=[],
+            has_sufficient_info=True,
+            metrics=ChatMetrics(retrieval_ms=0.0, generation_ms=0.0, total_ms=0.0, chunks_retrieved=0),
+        )
+        response.turn_created_at = _save_and_broadcast_turn(session_id, question, hostility_notice)
+        return response
+
     conversation_history = history_service.get_history(session_id)
     response, answer_text = _draft_response(session_id, question, conversation_history)
     response.turn_created_at = _save_and_broadcast_turn(session_id, question, answer_text)
@@ -279,6 +291,19 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
         yield {"type": "escalated", "text": ESCALATED_NOTICE}
         yield {
             "type": "done",
+            "metrics": {"retrieval_ms": 0.0, "generation_ms": 0.0, "total_ms": 0.0, "chunks_retrieved": 0},
+        }
+        return
+
+    hostility_notice = hostility_service.check_and_intercept(session_id, question)
+    if hostility_notice is not None:
+        turn_created_at = _save_and_broadcast_turn(session_id, question, hostility_notice)
+        yield {"type": "meta", "sources": [], "has_sufficient_info": True}
+        yield {"type": "delta", "text": hostility_notice}
+        yield {
+            "type": "done",
+            "suggestions": [],
+            "turn_created_at": turn_created_at,
             "metrics": {"retrieval_ms": 0.0, "generation_ms": 0.0, "total_ms": 0.0, "chunks_retrieved": 0},
         }
         return

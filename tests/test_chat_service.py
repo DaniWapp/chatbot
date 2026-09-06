@@ -8,12 +8,17 @@ app/rag/llm.py. Estas pruebas verifican que el pipeline llama al LLM en
 ambos casos y que "has_sufficient_info"/"sources" se derivan correctamente
 del contenido de la respuesta generada (mockeada, sin llamar a Groq real).
 """
+import uuid
 from unittest.mock import MagicMock, patch
 
 from app.config import settings
 from app.rag import llm
 from app.rag.retriever import RetrievedChunk
 from app.services import chat_service
+
+
+def _session_id() -> str:
+    return f"chat-hostility-test-{uuid.uuid4().hex[:8]}"
 
 
 def _fake_client_returning(json_content):
@@ -145,3 +150,34 @@ def test_suggest_clarifying_questions_handles_client_exception(mock_get_client):
 
 def test_suggest_clarifying_questions_returns_empty_without_candidates():
     assert llm.suggest_clarifying_questions("pregunta", []) == []
+
+
+# --- Detector de hostilidad (app/services/hostility_service.py) ---
+
+
+@patch("app.rag.llm.generate_answer")
+@patch("app.services.chat_service.retrieve_context")
+def test_hostile_message_skips_retrieval_and_generation(mock_retrieve, mock_generate, monkeypatch):
+    """Un mensaje hostil nunca debe gastar retrieval ni una llamada al LLM
+    -- se corta antes, igual que ya hace el corte de needs_human()."""
+    monkeypatch.setattr(settings, "HOSTILITY_STRIKE_LIMIT", 3)
+    response = chat_service.answer_question(_session_id(), "eres un idiota")
+
+    mock_retrieve.assert_not_called()
+    mock_generate.assert_not_called()
+    assert "1/3" in response.answer
+
+
+def test_hostility_block_triggers_after_strike_limit(monkeypatch):
+    monkeypatch.setattr(settings, "HOSTILITY_STRIKE_LIMIT", 2)
+    monkeypatch.setattr(settings, "HOSTILITY_BLOCK_HOURS", 1.0)
+    session_id = _session_id()
+
+    with patch("app.services.chat_service.retrieve_context"), patch("app.rag.llm.generate_answer"):
+        first = chat_service.answer_question(session_id, "eres un idiota")
+        second = chat_service.answer_question(session_id, "eres un idiota")
+        third = chat_service.answer_question(session_id, "una pregunta normal cualquiera")
+
+    assert "1/2" in first.answer
+    assert "bloqueado" in second.answer.lower()
+    assert "sigue bloqueado" in third.answer.lower()

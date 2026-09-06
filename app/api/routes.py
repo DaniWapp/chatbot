@@ -47,6 +47,8 @@ from app.models.schemas import (
     FaqCandidateUpdateRequest,
     FeedbackRequest,
     HealthResponse,
+    HostilityKeywordCreateRequest,
+    HostilityKeywordResponse,
     IngestResponse,
     InstitutionResponse,
     LoginRequest,
@@ -66,6 +68,7 @@ from app.services import chat_service
 from app.services import dashboard_service
 from app.services import faq_service
 from app.services import history as history_service
+from app.services import hostility_service
 from app.services import ingest_service
 from app.services import ws_manager
 from app.services.ingest_service import run_ingestion
@@ -720,6 +723,73 @@ def delete_dependencia_route(dependencia_id: int) -> dict:
         admin_service.delete_dependencia(dependencia_id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    return {"status": "ok"}
+
+
+# --- Root: detector de hostilidad (app/services/hostility_service.py) ---
+
+
+@router.get(
+    "/root/hostility-keywords", response_model=List[HostilityKeywordResponse], dependencies=[Depends(require_root)]
+)
+def list_hostility_keywords_route() -> List[HostilityKeywordResponse]:
+    return [HostilityKeywordResponse(**k) for k in hostility_service.list_keywords()]
+
+
+@router.post(
+    "/root/hostility-keywords", response_model=HostilityKeywordResponse, dependencies=[Depends(require_root)]
+)
+def add_hostility_keyword_route(payload: HostilityKeywordCreateRequest) -> HostilityKeywordResponse:
+    try:
+        return HostilityKeywordResponse(**hostility_service.add_keyword(payload.phrase))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/root/hostility-keywords/{keyword_id}", dependencies=[Depends(require_root)])
+def delete_hostility_keyword_route(keyword_id: int) -> dict:
+    hostility_service.remove_keyword(keyword_id)
+    return {"status": "ok"}
+
+
+def _require_general(identity: AdminIdentity) -> None:
+    if identity.role != "general":
+        raise HTTPException(status_code=403, detail="Solo el administrador general puede gestionar esta lista.")
+
+
+@router.get(
+    "/admin/hostility-keywords",
+    response_model=List[HostilityKeywordResponse],
+    dependencies=[Depends(require_conversation_admin)],
+)
+def list_hostility_keywords_for_panel(
+    identity: AdminIdentity = Depends(require_conversation_admin),
+) -> List[HostilityKeywordResponse]:
+    _require_general(identity)
+    return [HostilityKeywordResponse(**k) for k in hostility_service.list_keywords()]
+
+
+@router.post(
+    "/admin/hostility-keywords",
+    response_model=HostilityKeywordResponse,
+    dependencies=[Depends(require_conversation_admin)],
+)
+def add_hostility_keyword_for_panel(
+    payload: HostilityKeywordCreateRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> HostilityKeywordResponse:
+    _require_general(identity)
+    try:
+        return HostilityKeywordResponse(**hostility_service.add_keyword(payload.phrase))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/admin/hostility-keywords/{keyword_id}", dependencies=[Depends(require_conversation_admin)])
+def delete_hostility_keyword_for_panel(
+    keyword_id: int, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> dict:
+    _require_general(identity)
+    hostility_service.remove_keyword(keyword_id)
     return {"status": "ok"}
 
 

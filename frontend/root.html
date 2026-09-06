@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/root.css?v=8" />
+  <link rel="stylesheet" href="/static/root.css?v=9" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -46,6 +46,7 @@
       <button class="root-tab" data-tab="administradores" type="button">Administradores</button>
       <button class="root-tab" data-tab="documentos" type="button">Documentos</button>
       <button class="root-tab" data-tab="faq" type="button">Preguntas frecuentes</button>
+      <button class="root-tab" data-tab="moderacion" type="button">Moderación</button>
     </nav>
 
     <main class="root-content">
@@ -220,6 +221,32 @@
         <div id="faq-candidates-list" class="faq-candidates-list"></div>
         <p id="faq-candidates-empty" class="empty-hint" hidden>No hay propuestas pendientes por ahora.</p>
       </section>
+
+      <section id="tab-moderacion" class="root-tab-panel" hidden>
+        <div class="panel-section-header">
+          <h2>Moderación</h2>
+        </div>
+        <p class="panel-section-hint">
+          Palabras y frases que activan el detector de hostilidad hacia el chatbot.
+          Tras varios avisos seguidos en la misma sesión, ese chat se bloquea
+          temporalmente.
+        </p>
+        <form id="new-hostility-keyword-form" class="hostility-add-form">
+          <input id="new-hostility-keyword-input" type="text" class="search-input" placeholder="Nueva palabra o frase..." required maxlength="200" />
+          <button type="submit" class="primary-button">Agregar</button>
+        </form>
+        <p id="hostility-keyword-error" class="modal-error" hidden></p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Palabra / frase</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="hostility-keywords-table-body"></tbody>
+        </table>
+        <p id="hostility-keywords-empty" class="empty-hint" hidden>No hay palabras configuradas.</p>
+      </section>
     </main>
   </div>
 
@@ -228,6 +255,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="/static/root.js?v=13"></script>
+  <script src="/static/root.js?v=14"></script>
 </body>
 </html>

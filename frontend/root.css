@@ -264,6 +264,17 @@ body {
   border-color: var(--accent);
 }
 
+.hostility-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.hostility-add-form .search-input {
+  margin-bottom: 0;
+}
+
 .primary-button {
   border: none;
   background: var(--accent-dark);

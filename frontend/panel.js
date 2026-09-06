@@ -33,6 +33,7 @@ const panelBodyEl = document.querySelector(".panel-body");
 const backToListButton = document.getElementById("back-to-list");
 const documentsTabButtonEl = document.getElementById("documents-tab-button");
 const dashboardTabButtonEl = document.getElementById("dashboard-tab-button");
+const moderacionTabButtonEl = document.getElementById("moderacion-tab-button");
 const modalOverlayEl = document.getElementById("modal-overlay");
 const modalContentEl = document.getElementById("modal-content");
 
@@ -143,6 +144,13 @@ async function tryEnterPanel() {
     documentsTabButtonEl.hidden = false;
     await loadDashboard();
     await loadDocuments();
+    // El detector de hostilidad es exclusivo del administrador general
+    // (igual que recategorizar documentos) -- un administrador de
+    // dependencia no ve ni puede tocar esta pestaña.
+    if (getAdminRole() === "general") {
+      moderacionTabButtonEl.hidden = false;
+      await loadPanelHostilityKeywords();
+    }
     authGateEl.hidden = true;
     panelAppEl.hidden = false;
     connectWebSocket();
@@ -1203,6 +1211,68 @@ document.addEventListener("visibilitychange", () => {
   loadSessions();
   connectWebSocket();
 });
+
+// --- Moderación: detector de hostilidad -----------------------------------
+
+async function loadPanelHostilityKeywords() {
+  const res = await adminFetch("/api/admin/hostility-keywords");
+  const keywords = await res.json();
+  renderPanelHostilityKeywordsTable(keywords);
+}
+
+function renderPanelHostilityKeywordsTable(keywords) {
+  const tbody = document.getElementById("panel-hostility-keywords-table-body");
+  const emptyEl = document.getElementById("panel-hostility-keywords-empty");
+  tbody.innerHTML = "";
+  emptyEl.hidden = keywords.length > 0;
+
+  for (const keyword of keywords) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(keyword.phrase)}</td>
+      <td><button type="button" class="danger delete-hostility-keyword-button">Eliminar</button></td>
+    `;
+    tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deletePanelHostilityKeyword(keyword));
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("panel-new-hostility-keyword-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("panel-new-hostility-keyword-input");
+  const errorEl = document.getElementById("panel-hostility-keyword-error");
+  const phrase = input.value.trim();
+  if (!phrase) return;
+
+  errorEl.hidden = true;
+  try {
+    const res = await adminFetch("/api/admin/hostility-keywords", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phrase }),
+    });
+    if (!res.ok) {
+      errorEl.textContent = await errorDetail(res);
+      errorEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    await loadPanelHostilityKeywords();
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  }
+});
+
+async function deletePanelHostilityKeyword(keyword) {
+  if (!confirm(`¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`)) return;
+  try {
+    const res = await adminFetch(`/api/admin/hostility-keywords/${keyword.id}`, { method: "DELETE" });
+    if (!res.ok) alert(await errorDetail(res));
+    await loadPanelHostilityKeywords();
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  }
+}
 
 if (getAdminToken()) {
   tryEnterPanel();

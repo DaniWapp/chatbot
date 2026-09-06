@@ -34,6 +34,17 @@ def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+# Semilla inicial del detector de hostilidad (ver hostility_keywords más
+# abajo) -- punto de partida editable, no una lista exhaustiva.
+_DEFAULT_HOSTILITY_KEYWORDS = [
+    "idiota", "estúpido", "estupido", "imbécil", "imbecil", "inútil", "inutil",
+    "basura", "maldito", "maldita", "mierda", "puto", "puta", "cállate", "callate",
+    "no sirves", "pedazo de mierda", "vete a la mierda", "malparido", "hijueputa",
+    "gonorrea", "marica", "pendejo", "sos un inútil", "eres un inútil",
+    "que estúpido", "bot de mierda",
+]
+
+
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
     """Agrega una columna a una tabla existente si todavía no la tiene.
     CREATE TABLE IF NOT EXISTS no modifica tablas ya creadas en ejecuciones
@@ -143,6 +154,33 @@ def _get_connection() -> sqlite3.Connection:
         # mensaje de asesor después de esa asignación (ver add_admin_message
         # y find_unattended_sessions).
         _ensure_column(_connection, "session_meta", "first_response_at", "TEXT")
+        # Hostilidad hacia el bot (ver app/services/hostility_service.py):
+        # hostility_strikes se reinicia a 0 cada vez que llega a
+        # HOSTILITY_STRIKE_LIMIT y se fija hostility_blocked_until (ISO,
+        # NULL = no bloqueada) durante HOSTILITY_BLOCK_HOURS.
+        _ensure_column(_connection, "session_meta", "hostility_strikes", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(_connection, "session_meta", "hostility_blocked_until", "TEXT")
+
+        # Palabras/frases que activan el detector de hostilidad -- editable
+        # por root y el administrador general desde /root y /panel (ver
+        # app/services/hostility_service.py). Se siembra con una lista por
+        # defecto SOLO si está vacía, para no reinsertar algo que un admin
+        # borró a propósito.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hostility_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phrase TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        if _connection.execute("SELECT COUNT(*) FROM hostility_keywords").fetchone()[0] == 0:
+            seed_time = _now()
+            _connection.executemany(
+                "INSERT INTO hostility_keywords (phrase, created_at) VALUES (?, ?)",
+                [(phrase, seed_time) for phrase in _DEFAULT_HOSTILITY_KEYWORDS],
+            )
 
         # NULL en dependencia_id = documento general/compartido. Vive aparte
         # del índice FAISS a propósito: run_ingestion(rebuild=True) borra y
