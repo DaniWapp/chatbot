@@ -109,19 +109,100 @@ El camino completo, desde que llega la pregunta:
 2. FAISS compara ese vector contra todos los guardados y devuelve los
    `RERANK_CANDIDATE_K` (10 por defecto) más parecidos, cada uno con su
    similitud.
-3. Un modelo de re-ranking (cross-encoder) reordena esos 10 candidatos
-   comparando la pregunta y cada fragmento **juntos** (no por separado,
-   como hace el embedding) para juzgar relevancia real -- corre local, sin
-   costo de Groq. Ver `app/rag/retriever.py`.
-4. Se conservan los `TOP_K` (4 por defecto) mejores fragmentos tras el
-   re-ranking, y esos son los que se envían como contexto al LLM junto con
-   la pregunta.
+3. Se descartan los que no superen `SIMILARITY_THRESHOLD` (0.35 por
+   defecto) -- ver más abajo cómo se calibró ese número con datos reales,
+   no a ojo.
+4. Un modelo de re-ranking (cross-encoder) reordena los candidatos que
+   quedan comparando la pregunta y cada fragmento **juntos** (no por
+   separado, como hace el embedding) para juzgar relevancia real, y
+   descarta los que no superen `RERANK_MIN_SCORE` (0.05 por defecto) --
+   corre local, sin costo de Groq. Ver `app/rag/retriever.py`.
+5. Se conservan los `TOP_K` (4 por defecto) mejores fragmentos que
+   sobrevivieron, y esos son los que se envían como contexto al LLM junto
+   con la pregunta -- puede haber menos de `TOP_K` si menos fragmentos
+   fueron realmente relevantes; nunca se rellena con fragmentos débiles
+   solo para completar el cupo.
 
 Este es también el punto donde actúa `drop_superseded_by_vigencia` (ver
-`app/rag/retriever.py`): antes del paso 4, si dos documentos candidatos
+`app/rag/retriever.py`): antes del paso 5, si dos documentos candidatos
 tienen alta similitud entre sí y ambos tienen `vigente_desde` asignado, se
 descarta el más antiguo -- salvo que la pregunta mencione explícitamente
 un año que corresponda al documento antiguo.
+
+### ¿Cómo calcula el cross-encoder ese puntaje de relevancia?
+
+A diferencia de los embeddings (que codifican la pregunta y el fragmento
+**por separado**, en dos pasadas independientes, y los comparan después
+con un producto punto -- ver
+[conceptos-embeddings.md](conceptos-embeddings.md)), el cross-encoder los
+concatena en **una sola secuencia** desde el principio (verificado contra
+el modelo real, `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`):
+
+```
+<s> ▁requisitos ▁de ▁grado </s></s> ▁Arti culo ▁22. ▁Es ▁requisit o ... </s>
+```
+
+`</s></s>` (doble marcador de fin) es el separador entre pregunta y
+fragmento en este tokenizador -- no hay un id de "segmento A/B" aparte,
+como sí tiene BERT clásico. Esa secuencia pasa junta por las mismas 12
+capas de atención que usan los embeddings (arquitectura MiniLM-L12-H384),
+así que cada palabra de la pregunta puede "ver" directamente cada palabra
+del fragmento -- algo que dos vectores calculados por separado no pueden
+hacer.
+
+La salida de esas 12 capas sigue siendo caja negra, pero la
+**cabeza de clasificación** final sí es inspeccionable
+(`XLMRobertaClassificationHead`, confirmado con `model.classifier` en el
+modelo real cargado):
+
+1. **`dense`**: capa 384→384 con activación `tanh`, aplicada al vector
+   final del token `<s>`.
+2. **`out_proj`**: capa 384→1 -- multiplica esos 384 valores por 384
+   pesos aprendidos y sesga (`bias`) la suma. Es el mismo tipo de
+   operación que el producto punto de embeddings (multiplicar y sumar),
+   solo que aquí los "pesos" no son otro vector de significado, sino
+   coeficientes aprendidos específicamente para juzgar relevancia
+   pregunta-fragmento.
+
+Verificado con los pesos reales para un par pregunta-fragmento real
+(pregunta "requisitos de grado" contra un fragmento de
+`Calendario_Academico_EJEMPLO.txt`): recalculando a mano la suma de los
+384 productos más el bias da **-2.6905599...**, contra
+**-2.6905601...** que devuelve el modelo completo -- la diferencia es
+solo redondeo de punto flotante. Ese logit crudo (sin acotar, por eso
+puede ser negativo) es el que después pasa por sigmoide para compararse
+con `RERANK_MIN_SCORE`.
+
+### ¿Por qué esos valores de umbral, y no otros?
+
+`RERANK_MIN_SCORE = 0.05` está documentado y calibrado desde el commit
+`c0aba63`: el cross-encoder devuelve logits crudos (pueden ser negativos),
+no probabilidades -- comparar 0.3 directamente contra eso rechazaba
+incluso fragmentos correctos. Tras aplicar sigmoide, datos reales de
+`evaluation/evaluate.py` mostraron un fragmento correcto con confianza
+0.127 y uno incorrecto con 0.002 -- 0.05 queda cómodo entre ambos.
+
+`SIMILARITY_THRESHOLD = 0.35` viene desde el primer commit del proyecto,
+sin ese mismo respaldo documentado -- así que se calibró después, con el
+mismo método, corriendo `evaluation/test_questions.json` (10 preguntas
+reales) contra el índice real:
+
+- Las 7 preguntas con respuesta correcta obtuvieron similitud entre
+  **0.42 y 0.73** -- todas sobre 0.35, con margen real.
+- 2 de las 3 preguntas genuinamente sin información cayeron en **0.16 y
+  0.31** -- por debajo de 0.35, correctamente rechazadas.
+- La tercera ("calendario académico del año 2030") obtuvo **0.79** --
+  más alto que varias respuestas correctas, porque habla del mismo tema
+  indexado (calendario académico), solo que de otro año. La similitud de
+  embeddings mide de qué *trata* el texto, no si el año coincide -- ningún
+  umbral puede resolver ese caso por sí solo. Por eso existe una regla
+  aparte en el prompt del sistema (no asumir que el CONTEXTO aplica a un
+  año distinto al que la pregunta pide explícitamente), no el umbral.
+
+La documentación oficial de Sentence-Transformers
+([sbert.net](https://sbert.net/examples/sentence_transformer/applications/semantic-search/README.html))
+no recomienda ningún valor universal de corte -- deja la calibración al
+caso de uso, que es exactamente lo que se hizo aquí.
 
 ## ¿Dónde se guardan los chunks?
 

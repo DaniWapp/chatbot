@@ -60,6 +60,17 @@ class Settings:
     TOP_K: int = _get_int("TOP_K", 4)
     CHUNK_SIZE: int = _get_int("CHUNK_SIZE", 1000)
     CHUNK_OVERLAP: int = _get_int("CHUNK_OVERLAP", 150)
+    # Viene desde el primer commit sin calibración documentada; se
+    # verificó después contra evaluation/test_questions.json (10 preguntas
+    # reales): las 7 con respuesta correcta dieron similitud 0.42-0.73
+    # (todas sobre 0.35, con margen), y 2 de las 3 sin información real
+    # dieron 0.16 y 0.31 (correctamente rechazadas). La tercera sin
+    # información ("calendario del año 2030") dio 0.79 -- más alto que
+    # varias correctas, porque el embedding mide de qué trata el texto,
+    # no si el año coincide; ese caso lo resuelve una regla del prompt del
+    # sistema, no este umbral. La documentación oficial de
+    # sentence-transformers no recomienda un valor universal -- deja la
+    # calibración al caso de uso (ver docs/conceptos-chunks-y-faiss.md).
     SIMILARITY_THRESHOLD: float = _get_float("SIMILARITY_THRESHOLD", 0.35)
     # Umbral más bajo, solo para decidir si vale la pena pedirle al LLM
     # sugerencias de reformulación cuando no hay información suficiente (ver
