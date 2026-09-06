@@ -24,6 +24,9 @@ detallados, y guías para usuarios concretos.
   como proveedor del LLM y no otra alternativa.
 - **[notas-mejora-documentos.md](notas-mejora-documentos.md)** -- por qué
   se convierten PDF/DOCX a `.txt` al subirlos (medido, no solo teoría).
+- **[analisis-comparativo-chatbots.md](analisis-comparativo-chatbots.md)**
+  -- ventajas, desventajas y en qué casos conviene este enfoque (RAG)
+  frente a un chatbot tradicional (reglas, o un LLM sin documentos).
 
 ## Arquitectura y estructura
 
