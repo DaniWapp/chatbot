@@ -22,6 +22,9 @@ detallados, y guías para usuarios concretos.
 
 - **[decision-uso-de-groq.md](decision-uso-de-groq.md)** -- por qué Groq
   como proveedor del LLM y no otra alternativa.
+- **[decision-modelo-embeddings.md](decision-modelo-embeddings.md)** --
+  por qué `paraphrase-multilingual-MiniLM-L12-v2` para los embeddings y no
+  otra alternativa.
 - **[notas-mejora-documentos.md](notas-mejora-documentos.md)** -- por qué
   se convierten PDF/DOCX a `.txt` al subirlos (medido, no solo teoría).
 - **[analisis-comparativo-chatbots.md](analisis-comparativo-chatbots.md)**
