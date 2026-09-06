@@ -1,0 +1,12 @@
+/* Ajustes para /widget: mismo chat de style.css, sobre un lienzo pensado
+   para vivir dentro de un iframe angosto (ver frontend/widget-loader.js),
+   no una página completa -- por eso no se toca style.css directamente. */
+
+.app-header {
+  display: none;
+}
+
+.app {
+  max-width: none;
+  box-shadow: none;
+}

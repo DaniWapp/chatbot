@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asistente Virtual</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
+  <link rel="stylesheet" href="/static/style.css?v=39" />
+  <link rel="stylesheet" href="/static/widget.css?v=1" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="header-title">
+        <img id="institution-logo" class="institution-logo" src="" alt="" hidden />
+        <div>
+          <h1>Asistente Virtual</h1>
+          <p id="institution-subtitle">Facultad de Ingeniería</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="status-badge" class="status-badge offline" title="Estado del servidor">Conectando</span>
+      </div>
+    </header>
+
+    <main id="chat-window" class="chat-window">
+      <div id="empty-state" class="empty-state">
+        <p>Pregúntame sobre reglamentos, matrículas, calendario académico, requisitos de grado y más.</p>
+        <div class="suggestions">
+          <button class="suggestion-chip" type="button">¿Cuáles son los requisitos para graduarme?</button>
+          <button class="suggestion-chip" type="button">¿Cuándo empiezan las matrículas?</button>
+          <button class="suggestion-chip" type="button">¿Puedo cancelar una asignatura?</button>
+          <button class="suggestion-chip" type="button">¿Cuántos créditos puedo matricular?</button>
+        </div>
+      </div>
+    </main>
+
+    <div id="escalation-banner" class="escalation-banner" hidden>
+      <span class="escalation-banner-text">
+        Estás en <strong>modo humano</strong>: un asesor te está atendiendo.
+      </span>
+      <button id="banner-mark-solved-button" class="banner-mark-solved-button" type="button">Marcar como solucionado - Volver a modo bot</button>
+    </div>
+
+    <button id="mark-solved-button" class="mark-solved-button" type="button" hidden>Marcar como solucionado</button>
+
+    <form id="chat-form" class="chat-input-bar">
+      <input
+        id="message-input"
+        type="text"
+        placeholder="Escribe tu pregunta..."
+        autocomplete="off"
+        maxlength="2000"
+      />
+      <button id="send-button" type="submit" title="Enviar" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </form>
+  </div>
+
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/markdown-render.js"></script>
+  <script src="/static/script.js?v=38"></script>
+</body>
+</html>

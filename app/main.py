@@ -12,6 +12,7 @@ from app.api.routes import _perform_reassignment
 from app.api.routes import router as api_router
 from app.config import settings
 from app.services import history as history_service
+from app.services import widget_service
 from app.services import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -104,3 +105,14 @@ if FRONTEND_DIR.exists():
     @app.get("/root")
     def serve_root_panel():
         return FileResponse(str(FRONTEND_DIR / "root.html"), headers=_NO_CACHE_HEADERS)
+
+    @app.get("/widget")
+    def serve_widget():
+        # CSP frame-ancestors se arma en cada petición desde
+        # widget_allowed_origins (editable por root/admin general, ver
+        # app/services/widget_service.py) -- sin orígenes agregados, 'none'
+        # bloquea cualquier intento de embeberlo (fail-closed por defecto).
+        origins = widget_service.list_origins()
+        sources = " ".join(o["origin"] for o in origins) or "'none'"
+        headers = {**_NO_CACHE_HEADERS, "Content-Security-Policy": f"frame-ancestors {sources}"}
+        return FileResponse(str(FRONTEND_DIR / "widget.html"), headers=headers)

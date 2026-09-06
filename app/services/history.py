@@ -182,6 +182,21 @@ def _get_connection() -> sqlite3.Connection:
                 [(phrase, seed_time) for phrase in _DEFAULT_HOSTILITY_KEYWORDS],
             )
 
+        # Orígenes autorizados a embeber /widget en un iframe -- editable por
+        # root y el administrador general (ver app/services/widget_service.py).
+        # Sin filas = nadie puede embeberlo (CSP frame-ancestors 'none'),
+        # fail-closed por defecto -- no hay semilla, a diferencia de las
+        # palabras de hostilidad.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS widget_allowed_origins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                origin TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         # NULL en dependencia_id = documento general/compartido. Vive aparte
         # del índice FAISS a propósito: run_ingestion(rebuild=True) borra y
         # reconstruye el índice completo en cada ingesta, así que esta

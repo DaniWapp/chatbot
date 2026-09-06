@@ -173,6 +173,15 @@ class HostilityKeywordResponse(BaseModel):
     phrase: str
 
 
+class WidgetOriginCreateRequest(BaseModel):
+    origin: str = Field(..., min_length=1, max_length=300)
+
+
+class WidgetOriginResponse(BaseModel):
+    id: int
+    origin: str
+
+
 AdminRole = Literal["root", "general", "dependencia"]
 
 

@@ -34,6 +34,7 @@ const backToListButton = document.getElementById("back-to-list");
 const documentsTabButtonEl = document.getElementById("documents-tab-button");
 const dashboardTabButtonEl = document.getElementById("dashboard-tab-button");
 const moderacionTabButtonEl = document.getElementById("moderacion-tab-button");
+const widgetTabButtonEl = document.getElementById("widget-tab-button");
 const modalOverlayEl = document.getElementById("modal-overlay");
 const modalContentEl = document.getElementById("modal-content");
 
@@ -150,6 +151,8 @@ async function tryEnterPanel() {
     if (getAdminRole() === "general") {
       moderacionTabButtonEl.hidden = false;
       await loadPanelHostilityKeywords();
+      widgetTabButtonEl.hidden = false;
+      await loadPanelWidgetOrigins();
     }
     authGateEl.hidden = true;
     panelAppEl.hidden = false;
@@ -1384,6 +1387,74 @@ async function deletePanelHostilityKeyword(keyword) {
     const res = await adminFetch(`/api/admin/hostility-keywords/${keyword.id}`, { method: "DELETE" });
     if (!res.ok) alert(await errorDetail(res));
     await loadPanelHostilityKeywords();
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  }
+}
+
+// --- Widget embebible: orígenes permitidos --------------------------------
+
+async function loadPanelWidgetOrigins() {
+  const res = await adminFetch("/api/admin/widget-origins");
+  const origins = await res.json();
+  renderPanelWidgetOriginsTable(origins);
+  document.getElementById("panel-widget-snippet-code").textContent =
+    `<script src="${location.origin}/static/widget-loader.js"></scr` + `ipt>`;
+}
+
+function renderPanelWidgetOriginsTable(origins) {
+  const tbody = document.getElementById("panel-widget-origins-table-body");
+  const emptyEl = document.getElementById("panel-widget-origins-empty");
+  tbody.innerHTML = "";
+  emptyEl.hidden = origins.length > 0;
+
+  for (const origin of origins) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(origin.origin)}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
+        </div>
+      </td>
+    `;
+    tr.querySelector(".delete-widget-origin-button").addEventListener("click", () => deletePanelWidgetOrigin(origin));
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("panel-new-widget-origin-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("panel-new-widget-origin-input");
+  const errorEl = document.getElementById("panel-widget-origin-error");
+  const origin = input.value.trim();
+  if (!origin) return;
+
+  errorEl.hidden = true;
+  try {
+    const res = await adminFetch("/api/admin/widget-origins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ origin }),
+    });
+    if (!res.ok) {
+      errorEl.textContent = await errorDetail(res);
+      errorEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    await loadPanelWidgetOrigins();
+  } catch {
+    // adminFetch ya maneja el caso de sesión inválida.
+  }
+});
+
+async function deletePanelWidgetOrigin(origin) {
+  if (!confirm(`¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`)) return;
+  try {
+    const res = await adminFetch(`/api/admin/widget-origins/${origin.id}`, { method: "DELETE" });
+    if (!res.ok) alert(await errorDetail(res));
+    await loadPanelWidgetOrigins();
   } catch {
     // adminFetch ya maneja el caso de sesión inválida.
   }

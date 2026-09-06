@@ -67,6 +67,7 @@ async function tryEnterApp() {
     await loadDocuments(); // depende de que dependencias ya esté cargado (nombres en la tabla)
     await loadFaqCandidates();
     await loadHostilityKeywords();
+    await loadWidgetOrigins();
     adminDisplayNameEl.textContent = localStorage.getItem(DISPLAY_NAME_KEY) || "";
     authGateEl.hidden = true;
     rootAppEl.hidden = false;
@@ -1196,6 +1197,74 @@ async function deleteHostilityKeyword(keyword) {
     const res = await rootFetch(`/api/root/hostility-keywords/${keyword.id}`, { method: "DELETE" });
     if (!res.ok) alert(await errorDetail(res));
     await loadHostilityKeywords();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+}
+
+// --- Widget embebible: orígenes permitidos --------------------------------
+
+async function loadWidgetOrigins() {
+  const res = await rootFetch("/api/root/widget-origins");
+  const origins = await res.json();
+  renderWidgetOriginsTable(origins);
+  document.getElementById("widget-snippet-code").textContent =
+    `<script src="${location.origin}/static/widget-loader.js"></scr` + `ipt>`;
+}
+
+function renderWidgetOriginsTable(origins) {
+  const tbody = document.getElementById("widget-origins-table-body");
+  const emptyEl = document.getElementById("widget-origins-empty");
+  tbody.innerHTML = "";
+  emptyEl.hidden = origins.length > 0;
+
+  for (const origin of origins) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(origin.origin)}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
+        </div>
+      </td>
+    `;
+    tr.querySelector(".delete-widget-origin-button").addEventListener("click", () => deleteWidgetOrigin(origin));
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("new-widget-origin-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("new-widget-origin-input");
+  const errorEl = document.getElementById("widget-origin-error");
+  const origin = input.value.trim();
+  if (!origin) return;
+
+  errorEl.hidden = true;
+  try {
+    const res = await rootFetch("/api/root/widget-origins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ origin }),
+    });
+    if (!res.ok) {
+      errorEl.textContent = await errorDetail(res);
+      errorEl.hidden = false;
+      return;
+    }
+    input.value = "";
+    await loadWidgetOrigins();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+});
+
+async function deleteWidgetOrigin(origin) {
+  if (!confirm(`¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`)) return;
+  try {
+    const res = await rootFetch(`/api/root/widget-origins/${origin.id}`, { method: "DELETE" });
+    if (!res.ok) alert(await errorDetail(res));
+    await loadWidgetOrigins();
   } catch {
     // rootFetch ya maneja el caso de sesión inválida.
   }

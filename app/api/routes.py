@@ -61,6 +61,8 @@ from app.models.schemas import (
     SessionMessage,
     SessionStatus,
     SessionSummary,
+    WidgetOriginCreateRequest,
+    WidgetOriginResponse,
 )
 from app.rag import llm, vector_store
 from app.rag.document_loader import DocumentLoadError, load_document
@@ -72,6 +74,7 @@ from app.services import faq_service
 from app.services import history as history_service
 from app.services import hostility_service
 from app.services import ingest_service
+from app.services import widget_service
 from app.services import ws_manager
 from app.services.ingest_service import run_ingestion
 
@@ -792,6 +795,68 @@ def delete_hostility_keyword_for_panel(
 ) -> dict:
     _require_general(identity)
     hostility_service.remove_keyword(keyword_id)
+    return {"status": "ok"}
+
+
+# --- Root: orígenes permitidos para embeber /widget (app/services/widget_service.py) ---
+
+
+@router.get(
+    "/root/widget-origins", response_model=List[WidgetOriginResponse], dependencies=[Depends(require_root)]
+)
+def list_widget_origins_route() -> List[WidgetOriginResponse]:
+    return [WidgetOriginResponse(**o) for o in widget_service.list_origins()]
+
+
+@router.post(
+    "/root/widget-origins", response_model=WidgetOriginResponse, dependencies=[Depends(require_root)]
+)
+def add_widget_origin_route(payload: WidgetOriginCreateRequest) -> WidgetOriginResponse:
+    try:
+        return WidgetOriginResponse(**widget_service.add_origin(payload.origin))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/root/widget-origins/{origin_id}", dependencies=[Depends(require_root)])
+def delete_widget_origin_route(origin_id: int) -> dict:
+    widget_service.remove_origin(origin_id)
+    return {"status": "ok"}
+
+
+@router.get(
+    "/admin/widget-origins",
+    response_model=List[WidgetOriginResponse],
+    dependencies=[Depends(require_conversation_admin)],
+)
+def list_widget_origins_for_panel(
+    identity: AdminIdentity = Depends(require_conversation_admin),
+) -> List[WidgetOriginResponse]:
+    _require_general(identity)
+    return [WidgetOriginResponse(**o) for o in widget_service.list_origins()]
+
+
+@router.post(
+    "/admin/widget-origins",
+    response_model=WidgetOriginResponse,
+    dependencies=[Depends(require_conversation_admin)],
+)
+def add_widget_origin_for_panel(
+    payload: WidgetOriginCreateRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> WidgetOriginResponse:
+    _require_general(identity)
+    try:
+        return WidgetOriginResponse(**widget_service.add_origin(payload.origin))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/admin/widget-origins/{origin_id}", dependencies=[Depends(require_conversation_admin)])
+def delete_widget_origin_for_panel(
+    origin_id: int, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> dict:
+    _require_general(identity)
+    widget_service.remove_origin(origin_id)
     return {"status": "ok"}
 
 

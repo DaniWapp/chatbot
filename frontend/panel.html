@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/panel.css?v=38" />
+  <link rel="stylesheet" href="/static/panel.css?v=40" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -44,6 +44,7 @@
       <button class="panel-tab" data-tab="dashboard" type="button" id="dashboard-tab-button" hidden>Dashboard</button>
       <button class="panel-tab" data-tab="documentos" type="button" id="documents-tab-button" hidden>Documentos</button>
       <button class="panel-tab" data-tab="moderacion" type="button" id="moderacion-tab-button" hidden>Moderación</button>
+      <button class="panel-tab" data-tab="widget" type="button" id="widget-tab-button" hidden>Widget</button>
     </nav>
 
     <div id="tab-conversaciones" class="panel-tab-panel panel-body">
@@ -174,6 +175,40 @@
       </table>
       <p id="panel-hostility-keywords-empty" class="empty-hint" hidden>No hay palabras configuradas.</p>
     </section>
+
+    <section id="tab-widget" class="panel-tab-panel" hidden>
+      <div class="panel-section-header">
+        <h2>Widget embebible</h2>
+      </div>
+      <p class="panel-section-hint">
+        Sitios autorizados a mostrar este chat embebido como una burbuja
+        flotante. Sin ninguna URL agregada, nadie puede embeberlo.
+      </p>
+      <form id="panel-new-widget-origin-form" class="hostility-add-form">
+        <input id="panel-new-widget-origin-input" type="text" class="search-input" placeholder="https://sitio-de-la-institucion.edu.co" required maxlength="300" />
+        <button type="submit" class="primary-button">Agregar</button>
+      </form>
+      <p id="panel-widget-origin-error" class="modal-error" hidden></p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>URL permitida</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="panel-widget-origins-table-body"></tbody>
+      </table>
+      <p id="panel-widget-origins-empty" class="empty-hint" hidden>No hay URLs configuradas -- el widget no se puede embeber en ningún sitio todavía.</p>
+
+      <div class="panel-section-header" style="margin-top: 32px;">
+        <h3>Código para el sitio anfitrión</h3>
+      </div>
+      <p class="panel-section-hint">
+        Pega esta línea en el sitio (ya agregado a la lista de arriba) para
+        que aparezca la burbuja del chat.
+      </p>
+      <pre id="panel-widget-snippet-code" class="widget-snippet"></pre>
+    </section>
   </div>
 
   <div id="modal-overlay" class="modal-overlay" hidden>
@@ -184,6 +219,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/panel.js?v=41"></script>
+  <script src="/static/panel.js?v=42"></script>
 </body>
 </html>

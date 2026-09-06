@@ -1051,6 +1051,23 @@ body {
   border-bottom: none;
 }
 
+.data-table select,
+.data-table input[type="date"] {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong, #d4d4d8);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+
+.data-table select:focus,
+.data-table input[type="date"]:focus {
+  border-color: var(--accent);
+}
+
 .row-actions {
   display: flex;
   gap: 8px;
@@ -1107,6 +1124,17 @@ body {
   font-size: 13px;
   color: var(--text-faint);
   text-align: center;
+}
+
+.widget-snippet {
+  background: var(--surface-hover, #f4f4f5);
+  border: 1px solid var(--border-strong, #d4d4d8);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12.5px;
+  overflow-x: auto;
+  white-space: pre;
 }
 
 /* --- Dashboard --- */
