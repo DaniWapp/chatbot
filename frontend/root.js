@@ -863,13 +863,15 @@ async function deleteDocument(doc) {
 
 document.getElementById("documents-search").addEventListener("input", renderDocumentsTable);
 
+const IMAGE_EXTENSION_PATTERN = /\.(jpe?g|png|webp)$/i;
+
 document.getElementById("new-document-button").addEventListener("click", () => {
   openModal(`
     <h3>Subir documento</h3>
-    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo.</p>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo. Las imágenes (afiches de eventos, talleres, etc.) también: se extrae el texto con IA para revisarlo antes de guardar.</p>
     <form id="upload-document-form" class="modal-form">
-      <label>Archivo (PDF, TXT, DOCX o XLSX)
-        <input id="upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />
+      <label>Archivo (PDF, TXT, DOCX, XLSX, JPG, PNG o WEBP)
+        <input id="upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx,.jpg,.jpeg,.png,.webp" required />
       </label>
       <label>Dependencia (opcional)
         <select id="upload-document-dependencia">
@@ -881,6 +883,11 @@ document.getElementById("new-document-button").addEventListener("click", () => {
         <input id="upload-document-vigencia" type="date" />
       </label>
       <p class="modal-hint">Solo para documentos que se reemplazan con el tiempo (calendarios, precios, etc.): si dos documentos responden la misma pregunta, gana el de fecha más reciente -- puede ser una fecha futura si ya se sabe que ese documento aplicará desde entonces. Déjalo vacío para documentos generales que no vencen.</p>
+      <div id="upload-document-extracted-container" hidden>
+        <label>Texto extraído de la imagen (revísalo y corrígelo si hace falta)
+          <textarea id="upload-document-extracted-text" rows="8"></textarea>
+        </label>
+      </div>
       <p id="upload-document-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="cancel-button">Cancelar</button>
@@ -889,16 +896,55 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     </form>
   `);
 
+  const fileInput = document.getElementById("upload-document-file");
+  const extractedContainer = document.getElementById("upload-document-extracted-container");
+  const extractedTextarea = document.getElementById("upload-document-extracted-text");
+  const submitButton = document.querySelector("#upload-document-form button[type=submit]");
+  let hasExtractedText = false;
+
+  fileInput.addEventListener("change", () => {
+    hasExtractedText = false;
+    extractedContainer.hidden = true;
+    extractedTextarea.value = "";
+    submitButton.textContent = "Subir";
+  });
+
   document.getElementById("upload-document-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const errorEl = document.getElementById("upload-document-error");
-    const fileInput = document.getElementById("upload-document-file");
     const dependenciaValue = document.getElementById("upload-document-dependencia").value;
     const vigenciaValue = document.getElementById("upload-document-vigencia").value;
     const file = fileInput.files[0];
     if (!file) return;
+    const isImage = IMAGE_EXTENSION_PATTERN.test(file.name);
 
-    const submitButton = e.target.querySelector("button[type=submit]");
+    errorEl.hidden = true;
+
+    // Paso 1 para imágenes: solo extraer el texto y mostrarlo para revisión
+    // -- todavía no se sube/guarda nada.
+    if (isImage && !hasExtractedText) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Extrayendo texto...";
+      try {
+        const extractFormData = new FormData();
+        extractFormData.append("file", file);
+        const res = await rootFetch("/api/root/documents/extract-image-text", { method: "POST", body: extractFormData });
+        if (!res.ok) throw new Error(await errorDetail(res));
+        const data = await res.json();
+        extractedTextarea.value = data.text || "";
+        extractedContainer.hidden = false;
+        hasExtractedText = true;
+        submitButton.textContent = "Guardar documento";
+      } catch (err) {
+        errorEl.textContent = err.message || "No se pudo extraer el texto de la imagen.";
+        errorEl.hidden = false;
+        submitButton.textContent = "Subir";
+      } finally {
+        submitButton.disabled = false;
+      }
+      return;
+    }
+
     submitButton.disabled = true;
     submitButton.textContent = "Subiendo...";
 
@@ -906,6 +952,7 @@ document.getElementById("new-document-button").addEventListener("click", () => {
     formData.append("file", file);
     if (dependenciaValue) formData.append("dependencia_id", dependenciaValue);
     if (vigenciaValue) formData.append("vigente_desde", vigenciaValue);
+    if (isImage) formData.append("extracted_text", extractedTextarea.value);
 
     try {
       const res = await rootFetch("/api/root/documents", { method: "POST", body: formData });
@@ -920,7 +967,7 @@ document.getElementById("new-document-button").addEventListener("click", () => {
       errorEl.textContent = err.message || "No se pudo subir el documento.";
       errorEl.hidden = false;
       submitButton.disabled = false;
-      submitButton.textContent = "Subir";
+      submitButton.textContent = isImage ? "Guardar documento" : "Subir";
     }
   });
 });

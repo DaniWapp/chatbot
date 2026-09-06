@@ -181,3 +181,63 @@ def test_hostility_block_triggers_after_strike_limit(monkeypatch):
     assert "1/2" in first.answer
     assert "bloqueado" in second.answer.lower()
     assert "sigue bloqueado" in third.answer.lower()
+
+
+# --- Extracción de texto de imágenes (app/rag/llm.py::extract_text_from_image) ---
+
+
+@patch("app.rag.llm.get_client")
+def test_extract_text_from_image_sends_base64_image_and_returns_text(mock_get_client):
+    mock_get_client.return_value = _fake_client_returning("Título: Clase con el Congreso\nFecha: 11 de septiembre")
+
+    result = llm.extract_text_from_image(b"contenido binario falso de una imagen", ".png")
+
+    assert "Congreso" in result
+    sent_kwargs = mock_get_client.return_value.chat.completions.create.call_args.kwargs
+    content_blocks = sent_kwargs["messages"][0]["content"]
+    image_block = next(b for b in content_blocks if b["type"] == "image_url")
+    assert image_block["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+@patch("app.rag.llm.get_client")
+def test_extract_text_from_image_strips_thinking_block(mock_get_client):
+    """El modelo de visión (Qwen, razonamiento) puede meter su
+    "pensamiento" inline como <think>...</think> antes de la respuesta --
+    confirmado con una imagen real -- y no debe llegarle al administrador."""
+    mock_get_client.return_value = _fake_client_returning(
+        "<think>\nAnalizando la imagen paso a paso...\n</think>\n\nTítulo: Clase con el Congreso"
+    )
+
+    result = llm.extract_text_from_image(b"contenido binario falso", ".jpg")
+
+    assert result == "Título: Clase con el Congreso"
+    assert "<think>" not in result
+    assert "Analizando" not in result
+
+
+def test_estimate_tokens_handles_image_content_blocks():
+    """content puede ser una lista de bloques (llamada de visión) en vez de
+    un string -- un len() ingenuo sobre la lista contaría bloques (2), no
+    caracteres, y subestimaría brutalmente el uso real."""
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "a" * 100},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,xxxx"}},
+            ],
+        }
+    ]
+
+    estimate = llm._estimate_tokens(messages, max_completion_tokens=0)
+
+    # 100 caracteres de texto (//4 = 25) + 2048 de la imagen, muy por
+    # encima de lo que daría contar bloques de contenido como si fueran caracteres.
+    assert estimate >= 2048 + 25
+    assert estimate < 3000
+
+
+def test_estimate_tokens_still_handles_plain_string_content():
+    messages = [{"role": "user", "content": "a" * 400}]
+
+    assert llm._estimate_tokens(messages, max_completion_tokens=100) == 400 // 4 + 100

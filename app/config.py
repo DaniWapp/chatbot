@@ -22,6 +22,15 @@ class Settings:
     # --- Groq ---
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    # Extracción de texto de imágenes (afiches de eventos, etc.) al subirlas
+    # como documento -- ver app/rag/llm.py::extract_text_from_image. Modelo
+    # verificado en https://console.groq.com/docs/vision (puede cambiar si
+    # Groq lo deprecia, igual que GROQ_MODEL).
+    GROQ_VISION_MODEL: str = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+    # Groq acepta hasta 20MB por imagen en base64 (que pesa ~33% más que el
+    # binario original) -- un límite más bajo aquí evita que la subida
+    # llegue a intentar la llamada y falle del lado de Groq.
+    GROQ_VISION_MAX_IMAGE_MB: int = _get_int("GROQ_VISION_MAX_IMAGE_MB", 14)
     # Límite real del plan gratuito para openai/gpt-oss-20b: 30 peticiones/min
     # y 8000 tokens/min (ver https://console.groq.com/docs/rate-limits). Se
     # opera por debajo de eso a propósito -- deja margen para picos breves,
@@ -109,6 +118,11 @@ class Settings:
     VECTOR_DB_DIR: Path = BASE_DIR / os.getenv("VECTOR_DB_DIR", "vector_db")
     MAX_FILE_SIZE_MB: int = _get_int("MAX_FILE_SIZE_MB", 25)
 
+    # Extensiones que discover_documents() reconoce como contenido indexable
+    # que vive en DOCUMENTS_DIR -- las imágenes NO están aquí a propósito:
+    # nunca quedan en DOCUMENTS_DIR como imagen (se convierten a .txt antes,
+    # ver _IMAGE_EXTENSIONS en app/api/routes.py), así que no tiene sentido
+    # que una reconstrucción completa del índice las "descubra" ahí.
     ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".xlsx"}
     COLLECTION_NAME = "facultad_ingenieria"
 

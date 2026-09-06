@@ -1,6 +1,8 @@
 """Cliente Groq: construcción del prompt y generación de respuestas (normal y streaming)."""
+import base64
 import json
 import logging
+import re
 from functools import lru_cache
 from typing import Generator, List, Optional, Tuple
 
@@ -20,14 +22,33 @@ _rate_limiter = GroqRateLimiter(
 )
 
 
+_IMAGE_BLOCK_TOKEN_ESTIMATE = 2048  # cifra de https://console.groq.com/docs/vision
+
+
 def _estimate_tokens(messages: List[dict], max_completion_tokens: int) -> int:
     """Estimación gruesa y deliberadamente generosa (mejor sobrestimar que
     quedarse corto): ~4 caracteres por token es una aproximación común para
     texto en español/inglés con tokenizadores tipo GPT, y se suma el tope
     de tokens de salida que se le pidió al modelo -- no se sabe cuántos usará
-    realmente hasta que responde, así que se reserva el máximo posible."""
-    prompt_chars = sum(len(m.get("content", "") or "") for m in messages)
-    return (prompt_chars // 4) + max_completion_tokens
+    realmente hasta que responde, así que se reserva el máximo posible.
+
+    content puede ser un string (texto plano, el caso normal) o una lista
+    de bloques (llamadas de visión: texto + image_url, ver
+    extract_text_from_image) -- un simple len() sobre la lista contaría
+    bloques, no caracteres, y subestimaría brutalmente el uso real."""
+    prompt_chars = 0
+    image_blocks = 0
+    for m in messages:
+        content = m.get("content") or ""
+        if isinstance(content, str):
+            prompt_chars += len(content)
+        else:
+            for block in content:
+                if block.get("type") == "text":
+                    prompt_chars += len(block.get("text", ""))
+                elif block.get("type") == "image_url":
+                    image_blocks += 1
+    return (prompt_chars // 4) + (image_blocks * _IMAGE_BLOCK_TOKEN_ESTIMATE) + max_completion_tokens
 
 
 def _create_completion(purpose: str, **kwargs):
@@ -453,3 +474,59 @@ def is_duplicate_faq(suggested_question: str, suggested_answer: str, similar_exi
     except Exception:
         logger.exception("Fallo revisando si una propuesta de FAQ es duplicada")
         return False
+
+
+_IMAGE_MEDIA_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+# El modelo de visión (Qwen) es un modelo de razonamiento y, a diferencia de
+# GROQ_MODEL, no separa su "pensamiento" en un campo aparte -- lo inserta
+# inline como <think>...</think> antes de la respuesta final (confirmado
+# probando con una imagen real). Se descarta antes de mostrárselo al
+# administrador para revisión.
+_THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def extract_text_from_image(image_bytes: bytes, ext: str) -> str:
+    """Extrae texto de una imagen (afiches de eventos, talleres, etc.) con
+    el modelo de visión de Groq -- mucho mejor que un OCR tradicional para
+    diseños gráficos con texto disperso en distintas fuentes/colores, sin
+    depender de instalar nada a nivel de sistema operativo. Se ejecuta una
+    sola vez por imagen, al subirla (acción de administrador, no del flujo
+    de preguntas de estudiantes), así que el costo no compite con el
+    cuidado que se tiene con Groq en el resto del pipeline.
+
+    El texto que devuelve se muestra al administrador para revisión/
+    corrección ANTES de guardarse -- ver app/api/routes.py::_upload_document,
+    parámetro extracted_text."""
+    media_type = _IMAGE_MEDIA_TYPES.get(ext, "image/jpeg")
+    b64_data = base64.b64encode(image_bytes).decode("ascii")
+    completion = _create_completion(
+        "extract_text_from_image",
+        model=settings.GROQ_VISION_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Extrae TODO el texto visible en esta imagen, tal como aparece. "
+                            "Si es un afiche de un evento, taller o curso, asegúrate de incluir "
+                            "título, fecha, hora, lugar y responsable/ponente si aparecen. "
+                            "No resumas ni omitas nada -- responde solo con el texto extraído, "
+                            "sin comentarios adicionales."
+                        ),
+                    },
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64_data}"}},
+                ],
+            }
+        ],
+        temperature=0.2,
+        max_completion_tokens=1500,
+    )
+    raw_text = completion.choices[0].message.content or ""
+    return _THINK_BLOCK_PATTERN.sub("", raw_text).strip()

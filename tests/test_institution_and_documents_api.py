@@ -658,6 +658,106 @@ def test_delete_document_also_deletes_stored_original(tmp_path, monkeypatch):
     assert not (originals_dir / "Manual.docx").exists()
 
 
+# --- Imágenes como documento (ver app/rag/llm.py::extract_text_from_image) ---
+
+
+def test_extract_image_text_route_returns_text_without_writing_any_files(tmp_path, monkeypatch):
+    """El paso de extracción es de solo lectura -- no debe crear nada en
+    DOCUMENTS_DIR ni en DOCUMENT_ORIGINALS_DIR, el admin todavía tiene que
+    revisar/confirmar antes de guardar."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+    token = _login_as()
+
+    with patch("app.api.routes.llm.extract_text_from_image", return_value="Texto extraído del afiche.") as mock_extract:
+        res = client.post(
+            "/api/root/documents/extract-image-text",
+            files={"file": ("Afiche.png", b"contenido binario falso", "image/png")},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert res.json()["text"] == "Texto extraído del afiche."
+    mock_extract.assert_called_once()
+    assert list(tmp_path.iterdir()) == []  # nada se escribió en DOCUMENTS_DIR
+    assert not originals_dir.exists()  # tampoco se creó DOCUMENT_ORIGINALS_DIR
+
+
+def test_upload_image_with_extracted_text_saves_txt_and_keeps_original(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+    token = _login_as()
+
+    image_bytes = b"contenido binario falso de un afiche"
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        res = client.post(
+            "/api/root/documents",
+            files={"file": ("Afiche.png", image_bytes, "image/png")},
+            data={"extracted_text": "Clase con el Congreso de la República -- 11 de septiembre, 10:30 a.m."},
+            headers=_auth(token),
+        )
+
+    assert res.status_code == 200
+    assert res.json()["final_filename"] == "Afiche.txt"
+    txt_path = tmp_path / "Afiche.txt"
+    assert txt_path.exists()
+    assert "Congreso de la República" in txt_path.read_text(encoding="utf-8")
+    assert not (tmp_path / "Afiche.png").exists()
+
+    original_path = originals_dir / "Afiche.png"
+    assert original_path.exists()
+    assert original_path.read_bytes() == image_bytes
+
+
+def test_upload_image_without_extracted_text_returns_400(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", tmp_path / "originals")
+    token = _login_as()
+
+    res = client.post(
+        "/api/root/documents",
+        files={"file": ("Afiche.png", b"contenido binario falso", "image/png")},
+        headers=_auth(token),
+    )
+
+    assert res.status_code == 400
+    assert not (tmp_path / "Afiche.png").exists()
+    assert not (tmp_path / "Afiche.txt").exists()
+
+
+def test_download_image_document_returns_original_image(tmp_path, monkeypatch):
+    """La descarga generaliza a imágenes igual que a PDF/DOCX --
+    _find_stored_original prueba también extensiones de imagen."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    originals_dir = tmp_path / "originals"
+    originals_dir.mkdir()
+    monkeypatch.setattr(settings, "DOCUMENT_ORIGINALS_DIR", originals_dir)
+
+    (tmp_path / "Afiche.txt").write_text("Texto extraído para indexar.", encoding="utf-8")
+    image_bytes = b"contenido real de la imagen original"
+    (originals_dir / "Afiche.png").write_bytes(image_bytes)
+
+    res = client.get("/api/documents/Afiche.txt/download?session_id=test-download-image")
+
+    assert res.status_code == 200
+    assert res.content == image_bytes
+    assert "Afiche.png" in res.headers["content-disposition"]
+
+
 # --- Vigencia por documento (ver app/rag/retriever.py::drop_superseded_by_vigencia) ---
 
 

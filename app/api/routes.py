@@ -925,6 +925,16 @@ def _list_documents() -> List[DocumentInfo]:
 # perdería si se convirtiera a .txt.
 _CONVERT_TO_TXT_EXTENSIONS = {".pdf", ".docx"}
 
+# Afiches de eventos/talleres/cursos (ver app/rag/llm.py::extract_text_from_image):
+# a diferencia de PDF/DOCX, el texto NO se extrae automáticamente aquí --
+# llega ya revisado/corregido por el administrador como el parámetro
+# extracted_text de _upload_document (ver endpoint extract_image_text_route).
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# Extensiones cuyo original se conserva en DOCUMENT_ORIGINALS_DIR en vez de
+# descartarse -- usado por _find_stored_original para saber qué buscar.
+_ORIGINAL_PRESERVING_EXTENSIONS = _CONVERT_TO_TXT_EXTENSIONS | _IMAGE_EXTENSIONS
+
 
 def _find_stored_original(txt_filename: str) -> Optional[Path]:
     """Dado el nombre final (.txt) de un documento convertido, busca su
@@ -934,11 +944,45 @@ def _find_stored_original(txt_filename: str) -> Optional[Path]:
     uno convertido antes de que existiera esta carpeta (su original ya se
     descartó permanentemente en su momento)."""
     stem = Path(txt_filename).stem
-    for ext in _CONVERT_TO_TXT_EXTENSIONS:
+    for ext in _ORIGINAL_PRESERVING_EXTENSIONS:
         candidate = settings.DOCUMENT_ORIGINALS_DIR / f"{stem}{ext}"
         if candidate.exists():
             return candidate
     return None
+
+
+def _extract_image_text(content: bytes, raw_filename: str) -> str:
+    """Llama al modelo de visión de Groq para extraer el texto de una
+    imagen -- de solo lectura, no escribe nada en disco ni en el índice.
+    El resultado se le muestra al administrador para revisar/corregir
+    antes de confirmar la subida (ver _upload_document, extracted_text)."""
+    ext = Path(raw_filename).suffix.lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Extensión no permitida para imágenes: {ext}")
+    if len(content) > settings.GROQ_VISION_MAX_IMAGE_MB * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La imagen supera el tamaño máximo para extracción ({settings.GROQ_VISION_MAX_IMAGE_MB} MB).",
+        )
+    try:
+        return llm.extract_text_from_image(content, ext)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo extraer el texto de la imagen: {exc}") from exc
+
+
+def _finalize_converted_document(original_path: Path, ext: str, extracted_text: str) -> str:
+    """Último tramo compartido entre PDF/DOCX (texto extraído
+    automáticamente) e imágenes (texto ya revisado por el administrador):
+    elige un nombre .txt libre, lo escribe, y mueve el original a
+    DOCUMENT_ORIGINALS_DIR con ese mismo stem -- así _find_stored_original
+    lo encuentra sin ambigüedad, incluso si hubo que agregarle un "(2)"
+    anti-colisión."""
+    final_filename = _next_available_txt_name(original_path.stem)
+    (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
+    settings.DOCUMENT_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
+    stored_original_path = settings.DOCUMENT_ORIGINALS_DIR / f"{Path(final_filename).stem}{ext}"
+    original_path.rename(stored_original_path)
+    return final_filename
 
 
 def _next_available_txt_name(stem: str) -> str:
@@ -957,7 +1001,11 @@ def _next_available_txt_name(stem: str) -> str:
 
 
 def _upload_document(
-    content: bytes, raw_filename: str, dependencia_id: Optional[int], vigente_desde: Optional[str] = None
+    content: bytes,
+    raw_filename: str,
+    dependencia_id: Optional[int],
+    vigente_desde: Optional[str] = None,
+    extracted_text: Optional[str] = None,
 ) -> IngestResponse:
     """Sube un documento a DOCUMENTS_DIR, lo etiqueta con una dependencia
     (None -- general/compartido) y lo ingesta de forma incremental: solo se
@@ -966,12 +1014,15 @@ def _upload_document(
     de root como por la del panel (general/dependencia) -- el control de
     quién puede elegir qué dependencia vive en cada ruta, no aquí.
 
-    Si el archivo es PDF o DOCX, se extrae su texto y se guarda como .txt
-    -- el original se mueve a DOCUMENT_ORIGINALS_DIR, fuera del alcance de
-    la ingesta (ver _CONVERT_TO_TXT_EXTENSIONS y _find_stored_original)."""
+    Si el archivo es PDF o DOCX, se extrae su texto automáticamente. Si es
+    una imagen, extracted_text debe traer el texto ya extraído (por
+    extract_text_from_image) y revisado/corregido por el administrador --
+    nunca se llama a Groq desde aquí. En ambos casos el original se mueve a
+    DOCUMENT_ORIGINALS_DIR, fuera del alcance de la ingesta (ver
+    _finalize_converted_document y _find_stored_original)."""
     filename = Path(raw_filename).name  # descarta cualquier ruta de directorio en el nombre
     ext = Path(filename).suffix.lower()
-    if ext not in settings.ALLOWED_EXTENSIONS:
+    if ext not in settings.ALLOWED_EXTENSIONS and ext not in _IMAGE_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Extensión no permitida: {ext}")
 
     if len(content) > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
@@ -991,18 +1042,16 @@ def _upload_document(
             original_path.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail=f"No se pudo procesar el documento: {exc}") from exc
 
-        extracted_text = "\n\n".join(page.text for page in document.pages).strip()
-        # No sobreescribir un documento ya existente con ese nombre derivado
-        # (ej. Reporte.pdf y Reporte.docx subidos por separado convergerían
-        # ambos a "Reporte.txt") -- se le agrega un consecutivo si hace falta.
-        final_filename = _next_available_txt_name(original_path.stem)
-        (settings.DOCUMENTS_DIR / final_filename).write_text(extracted_text, encoding="utf-8")
-        # Se guarda con el stem de final_filename (no el del nombre subido),
-        # para que coincida con el "(2)" anti-colisión que pudo haberse
-        # aplicado -- así _find_stored_original lo encuentra sin ambigüedad.
-        settings.DOCUMENT_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
-        stored_original_path = settings.DOCUMENT_ORIGINALS_DIR / f"{Path(final_filename).stem}{ext}"
-        original_path.rename(stored_original_path)
+        text = "\n\n".join(page.text for page in document.pages).strip()
+        final_filename = _finalize_converted_document(original_path, ext, text)
+    elif ext in _IMAGE_EXTENSIONS:
+        if not extracted_text or not extracted_text.strip():
+            original_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail="Falta el texto extraído/revisado de la imagen (usa /extract-image-text primero).",
+            )
+        final_filename = _finalize_converted_document(original_path, ext, extracted_text.strip())
 
     path = settings.DOCUMENTS_DIR / final_filename
     ingest_service.set_document_dependencia(final_filename, dependencia_id)
@@ -1085,9 +1134,16 @@ async def upload_document_route(
     file: UploadFile = File(...),
     dependencia_id: Optional[int] = Form(default=None),
     vigente_desde: Optional[str] = Form(default=None),
+    extracted_text: Optional[str] = Form(default=None),
 ) -> IngestResponse:
     content = await file.read()
-    return _upload_document(content, file.filename, dependencia_id, vigente_desde)
+    return _upload_document(content, file.filename, dependencia_id, vigente_desde, extracted_text)
+
+
+@router.post("/root/documents/extract-image-text", dependencies=[Depends(require_root)])
+async def extract_image_text_route(file: UploadFile = File(...)) -> dict:
+    content = await file.read()
+    return {"text": _extract_image_text(content, file.filename)}
 
 
 @router.put("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
@@ -1127,6 +1183,7 @@ async def upload_document_for_panel(
     file: UploadFile = File(...),
     dependencia_id: Optional[int] = Form(default=None),
     vigente_desde: Optional[str] = Form(default=None),
+    extracted_text: Optional[str] = Form(default=None),
     identity: AdminIdentity = Depends(require_conversation_admin),
 ) -> IngestResponse:
     """Un administrador de dependencia no elige dependencia -- se ignora
@@ -1135,7 +1192,13 @@ async def upload_document_for_panel(
     general/compartido. El general sí puede elegir cualquiera, igual que root."""
     effective_dependencia_id = identity.dependencia_id if identity.role == "dependencia" else dependencia_id
     content = await file.read()
-    return _upload_document(content, file.filename, effective_dependencia_id, vigente_desde)
+    return _upload_document(content, file.filename, effective_dependencia_id, vigente_desde, extracted_text)
+
+
+@router.post("/admin/documents/extract-image-text", dependencies=[Depends(require_conversation_admin)])
+async def extract_image_text_for_panel(file: UploadFile = File(...)) -> dict:
+    content = await file.read()
+    return {"text": _extract_image_text(content, file.filename)}
 
 
 @router.put(

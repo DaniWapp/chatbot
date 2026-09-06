@@ -418,20 +418,22 @@ async function loadDocuments() {
 document.getElementById("panel-documents-search").addEventListener("input", () => rerenderPanelDocumentsTable(getAdminRole() === "general"));
 document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
 
+const PANEL_IMAGE_EXTENSION_PATTERN = /\.(jpe?g|png|webp)$/i;
+
 function openUploadDocumentModal() {
   const isGeneral = getAdminRole() === "general";
   const ownDependenciaName = dependenciaNameById(getAdminDependenciaId());
   openModal(`
     <h3>Subir documento</h3>
-    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo.</p>
+    <p class="modal-hint">Los PDF y Word se convierten automáticamente a texto plano al subirlos para la búsqueda -- el archivo original se conserva aparte para que los estudiantes puedan descargarlo. Las imágenes (afiches de eventos, talleres, etc.) también: se extrae el texto con IA para revisarlo antes de guardar.</p>
     ${
       isGeneral
         ? ""
         : `<p class="modal-hint">Se etiquetará automáticamente con tu dependencia: <strong>${escapeHtml(ownDependenciaName)}</strong>.</p>`
     }
     <form id="panel-upload-document-form" class="modal-form">
-      <label>Archivo (PDF, TXT, DOCX o XLSX)
-        <input id="panel-upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx" required />
+      <label>Archivo (PDF, TXT, DOCX, XLSX, JPG, PNG o WEBP)
+        <input id="panel-upload-document-file" type="file" accept=".pdf,.txt,.docx,.xlsx,.jpg,.jpeg,.png,.webp" required />
       </label>
       ${
         isGeneral
@@ -444,6 +446,11 @@ function openUploadDocumentModal() {
         <input id="panel-upload-document-vigencia" type="date" />
       </label>
       <p class="modal-hint">Solo para documentos que se reemplazan con el tiempo (calendarios, precios, etc.): si dos documentos responden la misma pregunta, gana el de fecha más reciente -- puede ser una fecha futura si ya se sabe que ese documento aplicará desde entonces. Déjalo vacío para documentos generales que no vencen.</p>
+      <div id="panel-upload-document-extracted-container" hidden>
+        <label>Texto extraído de la imagen (revísalo y corrígelo si hace falta)
+          <textarea id="panel-upload-document-extracted-text" rows="8"></textarea>
+        </label>
+      </div>
       <p id="panel-upload-document-error" class="modal-error" hidden></p>
       <div class="modal-actions">
         <button type="button" class="cancel-button">Cancelar</button>
@@ -452,14 +459,51 @@ function openUploadDocumentModal() {
     </form>
   `);
 
+  const fileInput = document.getElementById("panel-upload-document-file");
+  const extractedContainer = document.getElementById("panel-upload-document-extracted-container");
+  const extractedTextarea = document.getElementById("panel-upload-document-extracted-text");
+  const submitButton = document.querySelector("#panel-upload-document-form button[type=submit]");
+  let hasExtractedText = false;
+
+  fileInput.addEventListener("change", () => {
+    hasExtractedText = false;
+    extractedContainer.hidden = true;
+    extractedTextarea.value = "";
+    submitButton.textContent = "Subir";
+  });
+
   document.getElementById("panel-upload-document-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const errorEl = document.getElementById("panel-upload-document-error");
-    const fileInput = document.getElementById("panel-upload-document-file");
     const file = fileInput.files[0];
     if (!file) return;
+    const isImage = PANEL_IMAGE_EXTENSION_PATTERN.test(file.name);
 
-    const submitButton = e.target.querySelector("button[type=submit]");
+    errorEl.hidden = true;
+
+    if (isImage && !hasExtractedText) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Extrayendo texto...";
+      try {
+        const extractFormData = new FormData();
+        extractFormData.append("file", file);
+        const res = await adminFetch("/api/admin/documents/extract-image-text", { method: "POST", body: extractFormData });
+        if (!res.ok) throw new Error(await errorDetail(res));
+        const data = await res.json();
+        extractedTextarea.value = data.text || "";
+        extractedContainer.hidden = false;
+        hasExtractedText = true;
+        submitButton.textContent = "Guardar documento";
+      } catch (err) {
+        errorEl.textContent = err.message || "No se pudo extraer el texto de la imagen.";
+        errorEl.hidden = false;
+        submitButton.textContent = "Subir";
+      } finally {
+        submitButton.disabled = false;
+      }
+      return;
+    }
+
     submitButton.disabled = true;
     submitButton.textContent = "Subiendo...";
 
@@ -473,6 +517,7 @@ function openUploadDocumentModal() {
     // backend fuerza la suya siempre, ignorando cualquier otro valor.
     const vigenciaValue = document.getElementById("panel-upload-document-vigencia").value;
     if (vigenciaValue) formData.append("vigente_desde", vigenciaValue);
+    if (isImage) formData.append("extracted_text", extractedTextarea.value);
 
     try {
       const res = await adminFetch("/api/admin/documents", { method: "POST", body: formData });
@@ -487,7 +532,7 @@ function openUploadDocumentModal() {
       errorEl.textContent = err.message || "No se pudo subir el documento.";
       errorEl.hidden = false;
       submitButton.disabled = false;
-      submitButton.textContent = "Subir";
+      submitButton.textContent = isImage ? "Guardar documento" : "Subir";
     }
   });
 }
