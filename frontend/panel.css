@@ -20,6 +20,15 @@
   box-sizing: border-box;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -84,10 +93,12 @@ body {
   border: 1px solid #d4d4d8;
   font-size: 13.5px;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .auth-form input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .auth-form button {
@@ -99,10 +110,15 @@ body {
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .auth-form button:hover {
   background: var(--accent);
+}
+
+.auth-form button:active {
+  transform: scale(0.98);
 }
 
 .auth-error {
@@ -157,11 +173,15 @@ body {
   padding: 5px 12px;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .logout-button:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+.logout-button:active {
+  transform: scale(0.97);
 }
 
 .icon-button {
@@ -176,11 +196,15 @@ body {
   color: #ffffff;
   border-radius: 50%;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .icon-button:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+.icon-button:active {
+  transform: scale(0.94);
 }
 
 .icon-button svg {
@@ -290,7 +314,11 @@ body {
   letter-spacing: 0.03em;
   text-transform: none;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.06s ease;
+}
+
+.pending-chip:active {
+  transform: scale(0.96);
 }
 
 .pending-chip:hover {
@@ -462,12 +490,16 @@ body {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.06s ease;
   flex-shrink: 0;
 }
 
 .resolve-button:hover {
   background: var(--surface-hover);
+}
+
+.resolve-button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .resolve-button:disabled {
@@ -511,7 +543,11 @@ body {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.06s ease;
+}
+
+.load-older-button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .load-older-button:hover:not(:disabled) {
@@ -718,10 +754,12 @@ body {
   border: 1px solid var(--border-strong, #d4d4d8);
   font-size: 13px;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .advisor-reply-form input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .advisor-reply-form button {
@@ -733,10 +771,15 @@ body {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .advisor-reply-form button:hover {
   background: var(--accent);
+}
+
+.advisor-reply-form button:active {
+  transform: scale(0.97);
 }
 
 .ask-bot-panel {
@@ -770,10 +813,12 @@ body {
   font-size: 13px;
   outline: none;
   background: var(--surface);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .ask-bot-form input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .ask-bot-form button {
@@ -786,10 +831,15 @@ body {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .ask-bot-form button:hover {
   background: var(--accent);
+}
+
+.ask-bot-form button:active {
+  transform: scale(0.97);
 }
 
 .ask-bot-result {
@@ -832,10 +882,15 @@ body {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .ask-bot-actions .primary-button:hover {
   background: var(--accent);
+}
+
+.ask-bot-actions .primary-button:active {
+  transform: scale(0.97);
 }
 
 .ask-bot-actions .cancel-button {
@@ -846,6 +901,7 @@ body {
   padding: 7px 14px;
   font-size: 12.5px;
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
 .ask-bot-actions .cancel-button:hover {
@@ -931,12 +987,23 @@ body {
   font-size: 13px;
   font-family: inherit;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.modal-form select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 30px;
+  cursor: pointer;
 }
 
 .modal-form input:focus,
 .modal-form select:focus,
 .modal-form textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .modal-error {
@@ -984,10 +1051,15 @@ body {
   padding: 4px 10px;
   font-size: 11.5px;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .horario-rango-row .remove-rango-button:hover {
   background: #fef2f2;
+}
+
+.horario-rango-row .remove-rango-button:active {
+  transform: scale(0.96);
 }
 
 .modal-secondary-button {
@@ -999,10 +1071,12 @@ body {
   padding: 8px 16px;
   font-size: 12.5px;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .modal-secondary-button:hover {
   background: var(--surface-hover);
+  border-color: var(--accent);
 }
 
 .modal-actions {
@@ -1020,6 +1094,7 @@ body {
   padding: 8px 16px;
   font-size: 12.5px;
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
 .modal-actions .cancel-button:hover {
@@ -1043,10 +1118,12 @@ body {
   outline: none;
   margin: 10px 0 4px;
   display: block;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .search-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .filter-chips {
@@ -1064,10 +1141,15 @@ body {
   padding: 6px 14px;
   font-size: 12.5px;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.06s ease;
 }
 
 .filter-chip:hover {
   background: var(--surface-hover);
+}
+
+.filter-chip:active {
+  transform: scale(0.97);
 }
 
 .filter-chip.active {
@@ -1096,10 +1178,21 @@ body {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .primary-button:hover {
   background: var(--accent);
+}
+
+.primary-button:active {
+  transform: scale(0.98);
+}
+
+.primary-button:disabled {
+  background: var(--text-faint);
+  cursor: not-allowed;
+  transform: none;
 }
 
 .data-table {
@@ -1136,7 +1229,7 @@ body {
 
 .data-table select,
 .data-table input[type="date"] {
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong, #d4d4d8);
   background: var(--surface);
@@ -1144,11 +1237,21 @@ body {
   font-size: 12.5px;
   font-family: inherit;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.data-table select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
 }
 
 .data-table select:focus,
 .data-table input[type="date"]:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .row-actions {
@@ -1161,8 +1264,20 @@ body {
 .row-actions select {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong, #d4d4d8);
-  padding: 4px 8px;
+  padding: 4px 22px 4px 8px;
   font-size: 11.5px;
+  appearance: none;
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.row-actions select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .row-actions button {
@@ -1173,10 +1288,15 @@ body {
   padding: 4px 10px;
   font-size: 11.5px;
   cursor: pointer;
+  transition: background 0.12s ease, transform 0.06s ease;
 }
 
 .row-actions button:hover {
   background: var(--surface-hover);
+}
+
+.row-actions button:active {
+  transform: scale(0.96);
 }
 
 .row-actions button.danger {
