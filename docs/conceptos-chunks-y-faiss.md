@@ -9,8 +9,25 @@ código.
 
 Un pedazo pequeño de texto en el que se divide un documento antes de
 indexarlo. En vez de guardar "el PDF completo" como un solo bloque, se
-corta en piezas de ~500 caracteres (o una fila de Excel, o una pregunta+
-respuesta de FAQ, según el tipo de archivo -- ver `app/rag/chunker.py`).
+corta en piezas de `CHUNK_SIZE` caracteres (1000 por defecto -- ver
+`app/config.py`), con `CHUNK_OVERLAP` caracteres (150 por defecto) de
+traslape entre un chunk y el siguiente, para que una idea que caiga justo
+en el corte no se pierda por completo en ninguno de los dos. Excepciones
+por tipo de archivo: una fila de Excel, o una pregunta+respuesta de FAQ,
+van completas en su propio chunk sin partirse (ver `app/rag/chunker.py`).
+
+El traslape real casi nunca es exactamente 150 caracteres: el algoritmo
+(`_split_text` en `app/rag/chunker.py`) busca el punto o el espacio más
+cercano dentro de esa ventana para no cortar una oración a la mitad. Por
+ejemplo, sobre un párrafo real de 1389 caracteres, el resultado fue:
+
+```
+chunk 0: caracteres [0, 878)
+chunk 1: caracteres [850, 1389)   <- solo 28 caracteres de traslape real
+```
+
+El chunk 1 empieza repitiendo la última frase del chunk 0 para que esa
+idea no quede huérfana en ninguno de los dos fragmentos.
 
 ¿Por qué dividir en vez de guardar el documento entero?
 
@@ -77,6 +94,31 @@ documento, la página y el texto real de ese fragmento.
 **Persistencia:** `faiss.write_index()`/`read_index()` guardan y cargan el
 índice completo como un archivo binario, para que sobreviva a un reinicio
 del servidor sin reprocesar todos los documentos.
+
+## ¿Cómo se usan los chunks al responder una pregunta?
+
+FAISS por sí solo no decide la respuesta final -- solo entrega candidatos.
+El camino completo, desde que llega la pregunta:
+
+1. La pregunta se convierte en un vector con el mismo modelo de embeddings
+   usado en la ingesta (tienen que caer en el mismo "espacio de
+   significado" para poder compararse).
+2. FAISS compara ese vector contra todos los guardados y devuelve los
+   `RERANK_CANDIDATE_K` (10 por defecto) más parecidos, cada uno con su
+   similitud.
+3. Un modelo de re-ranking (cross-encoder) reordena esos 10 candidatos
+   comparando la pregunta y cada fragmento **juntos** (no por separado,
+   como hace el embedding) para juzgar relevancia real -- corre local, sin
+   costo de Groq. Ver `app/rag/retriever.py`.
+4. Se conservan los `TOP_K` (4 por defecto) mejores fragmentos tras el
+   re-ranking, y esos son los que se envían como contexto al LLM junto con
+   la pregunta.
+
+Este es también el punto donde actúa `drop_superseded_by_vigencia` (ver
+`app/rag/retriever.py`): antes del paso 4, si dos documentos candidatos
+tienen alta similitud entre sí y ambos tienen `vigente_desde` asignado, se
+descarta el más antiguo -- salvo que la pregunta mencione explícitamente
+un año que corresponda al documento antiguo.
 
 ## ¿Dónde se guardan los chunks?
 
