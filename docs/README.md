@@ -19,6 +19,10 @@ detallados, y guías para usuarios concretos.
   al asistente, escalamiento y respuesta del asesor, auto-escalamiento
   por SLA, subida e indexación de documentos, sugerencias de FAQ,
   moderación y el widget embebible.
+- **[diagrama-de-clases.md](diagrama-de-clases.md)** -- el modelo de
+  datos persistente real (las 16 tablas de `history.db` y sus
+  relaciones) y los objetos en memoria del pipeline de documentos, en
+  diagramas de clases (Mermaid).
 
 ## Para presentar/exponer el proyecto
 
