@@ -19,6 +19,13 @@ def _get_float(name: str, default: float) -> float:
 class Settings:
     BASE_DIR: Path = BASE_DIR
 
+    # Zona horaria de la institución -- usada para calcular la fecha/hora
+    # "actual" que se le da al LLM (ver app/rag/llm.py::_build_system_prompt),
+    # para que pueda responder preguntas relativas ("hoy", "mañana"). No usar
+    # UTC directamente: cerca de la medianoche en Colombia (UTC-5) la fecha en
+    # UTC ya cambió de día varias horas antes, dando el día equivocado.
+    INSTITUTION_TIMEZONE: str = os.getenv("INSTITUTION_TIMEZONE", "America/Bogota")
+
     # --- Groq ---
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
