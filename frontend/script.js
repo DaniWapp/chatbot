@@ -608,7 +608,13 @@ function addEscalationOption(block) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "escalate-button";
-  button.textContent = "Solicitar atención humana";
+  button.innerHTML = `
+    <span>Solicitar atención humana</span>
+    <svg class="suggestion-button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>
+  `;
   button.addEventListener("click", () => {
     const savedName = sessionStorage.getItem("chat_student_name");
     const savedEmail = sessionStorage.getItem("chat_student_email");
