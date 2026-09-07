@@ -12,11 +12,14 @@ Como FAISS solo almacena vectores (no metadatos), se guarda un archivo
 chunk, en el mismo orden que las filas del índice FAISS.
 """
 import json
+import re
 import threading
+import unicodedata
 from typing import Dict, List, Optional
 
 import faiss
 import numpy as np
+from rank_bm25 import BM25Okapi
 
 from app.config import settings
 from app.rag.chunker import Chunk
@@ -25,6 +28,26 @@ _lock = threading.Lock()
 _index: Optional["faiss.Index"] = None
 _metadata: List[Dict] = []
 _loaded = False
+# Índice léxico (BM25), en memoria, reconstruido cada vez que cambia
+# _metadata -- ver lexical_query() y app/rag/retriever.py::retrieve() para
+# por qué hace falta además de la búsqueda semántica (FAISS). No se
+# persiste a disco: reconstruirlo desde _metadata toma milisegundos
+# incluso con cientos de fragmentos, no vale la pena la complejidad de
+# serializarlo aparte.
+_bm25_index: Optional[BM25Okapi] = None
+
+
+def _normalize_for_bm25(text: str) -> List[str]:
+    """Minúsculas y sin acentos antes de tokenizar, para que "cálculo" y
+    "calculo" (como lo escribe un estudiante real, sin tilde) coincidan
+    igual."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _rebuild_bm25_index() -> None:
+    global _bm25_index
+    _bm25_index = BM25Okapi([_normalize_for_bm25(m["text"]) for m in _metadata]) if _metadata else None
 
 
 def _index_path():
@@ -47,6 +70,7 @@ def _ensure_loaded() -> None:
         _index = None
         _metadata = []
     _loaded = True
+    _rebuild_bm25_index()
 
 
 def _persist() -> None:
@@ -62,6 +86,7 @@ def reset_collection() -> None:
         _index = None
         _metadata = []
         _loaded = True
+        _rebuild_bm25_index()
         if _index_path().exists():
             _index_path().unlink()
         if _metadata_path().exists():
@@ -94,6 +119,7 @@ def add_chunks(chunks: List[Chunk], embeddings: List[List[float]], dependencia_i
                     "dependencia_id": dependencia_id,
                 }
             )
+        _rebuild_bm25_index()
         _persist()
 
 
@@ -122,6 +148,7 @@ def remove_document(filename: str) -> None:
         if not keep_indices:
             _index = None
             _metadata = []
+            _rebuild_bm25_index()
             if _index_path().exists():
                 _index_path().unlink()
             if _metadata_path().exists():
@@ -134,6 +161,7 @@ def remove_document(filename: str) -> None:
         new_index.add(kept_vectors)
         _index = new_index
         _metadata = [_metadata[i] for i in keep_indices]
+        _rebuild_bm25_index()
         _persist()
 
 
@@ -165,6 +193,43 @@ def query(embedding: List[float], top_k: int) -> List[Dict]:
                     "page": meta["page"],
                     "similarity": float(sim),
                     # .get(): los índices creados antes de esta función no tienen esta clave.
+                    "dependencia_id": meta.get("dependencia_id"),
+                }
+            )
+        return hits
+
+
+def lexical_query(question: str, top_k: int) -> List[Dict]:
+    """Búsqueda léxica (BM25: coincidencia de palabras, no de significado)
+    -- complementa query() para casos donde el embedding no distingue bien
+    dos textos parecidos pero un término exacto de la pregunta sí coincide
+    literalmente en el fragmento. Caso real que la motivó: para "la clase
+    de calculo diferencial", el embedding de la fila "Cálculo Diferencial"
+    quedaba muy por detrás de una fila de "Álgebra Lineal" no relacionada
+    (el modelo de embeddings confunde estas dos frases cortas de
+    matemáticas) -- BM25 la pone en el primer lugar sin ambigüedad, porque
+    "calculo" y "diferencial" aparecen literalmente ahí. Ver
+    app/rag/retriever.py::retrieve() para cómo se combina con query()."""
+    with _lock:
+        _ensure_loaded()
+        if _bm25_index is None:
+            return []
+        scores = _bm25_index.get_scores(_normalize_for_bm25(question))
+        ranked = sorted(range(len(scores)), key=lambda i: -scores[i])[:top_k]
+        hits: List[Dict] = []
+        for i in ranked:
+            if scores[i] <= 0:
+                continue
+            meta = _metadata[i]
+            hits.append(
+                {
+                    "chunk_id": meta["chunk_id"],
+                    "text": meta["text"],
+                    "document": meta["document"],
+                    "page": meta["page"],
+                    # Puntaje BM25 crudo, no una similitud coseno 0-1 --
+                    # no se compara directamente contra SIMILARITY_THRESHOLD.
+                    "similarity": float(scores[i]),
                     "dependencia_id": meta.get("dependencia_id"),
                 }
             )

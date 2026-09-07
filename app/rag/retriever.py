@@ -63,20 +63,29 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     """Recupera los fragmentos más relevantes para una pregunta.
 
     Trae un lote amplio de candidatos por embeddings (RERANK_CANDIDATE_K)
-    y, si RERANK_ENABLED, se los pasa TODOS al cross-encoder local (ver
-    app/rag/reranker.py) sin pre-filtrar por SIMILARITY_THRESHOLD -- caso
-    real verificado: para "la clase de calculo diferencial", el embedding
-    de la fila "Cálculo Diferencial" queda por debajo de ese umbral
-    (0.27 vs. 0.35) y hasta detrás de una fila de "Álgebra Lineal" no
-    relacionada (el modelo de embeddings confunde estas dos frases cortas
-    de matemáticas), pero el cross-encoder sí la distingue perfectamente
-    en cuanto se le muestra -- el problema nunca fue de juicio de
-    relevancia, era que el fragmento correcto no llegaba a esa etapa.
+    y, si RERANK_ENABLED, los combina con un lote de candidatos por
+    coincidencia léxica (LEXICAL_CANDIDATE_K, ver
+    vector_store.lexical_query) antes de pasárselos TODOS al cross-encoder
+    local (ver app/rag/reranker.py), sin pre-filtrar por
+    SIMILARITY_THRESHOLD. La vía léxica hace falta porque ampliar solo el
+    pool semántico no escala con el tamaño del corpus -- caso real
+    verificado: para "la clase de calculo diferencial", el embedding de la
+    fila "Cálculo Diferencial" queda por detrás de una fila de "Álgebra
+    Lineal" no relacionada en un corpus chico, y directamente fuera del
+    top 200 en un corpus de 500+ fragmentos (el modelo de embeddings
+    confunde estas dos frases cortas de matemáticas, sin importar cuántos
+    documentos haya). BM25 sí la encuentra en el primer lugar (coincidencia
+    literal de "calculo"/"diferencial"), y el cross-encoder la distingue
+    perfectamente en cuanto se le muestra -- el problema nunca fue de
+    juicio de relevancia, era que el fragmento correcto no llegaba a esa
+    etapa por ninguna de las dos vías por separado.
+
     Con re-ranking activo, RERANK_MIN_SCORE es entonces el único filtro
     de relevancia real. Sin re-ranking (RERANK_ENABLED=False), no hay un
     juez más preciso disponible, así que ahí sí se usa SIMILARITY_THRESHOLD
-    como antes. Puede devolver una lista vacía: el chatbot debe entonces
-    reconocer que no tiene información suficiente, en vez de alucinar.
+    como antes, solo sobre la vía semántica. Puede devolver una lista
+    vacía: el chatbot debe entonces reconocer que no tiene información
+    suficiente, en vez de alucinar.
     """
     top_k = top_k or settings.TOP_K
     query_embedding = embed_query(question)
@@ -84,7 +93,10 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     hits = vector_store.query(query_embedding, top_k=candidate_k)
 
     if settings.RERANK_ENABLED:
-        candidates = [_to_chunk(h) for h in hits]
+        combined = {h["chunk_id"]: h for h in hits}
+        for h in vector_store.lexical_query(question, top_k=settings.LEXICAL_CANDIDATE_K):
+            combined.setdefault(h["chunk_id"], h)
+        candidates = [_to_chunk(h) for h in combined.values()]
         if not candidates:
             return []
         result = reranker.rerank(question, candidates, top_k=top_k, min_score=settings.RERANK_MIN_SCORE)

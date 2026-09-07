@@ -34,9 +34,12 @@ def _rerank_keep_only_a1(question, chunks, top_k, min_score):
 
 
 @patch("app.rag.retriever.reranker.rerank", side_effect=_rerank_keep_only_a1)
+@patch("app.rag.retriever.vector_store.lexical_query", return_value=[])
 @patch("app.rag.retriever.vector_store.query", return_value=FAKE_HITS)
 @patch("app.rag.retriever.embed_query", return_value=[0.1, 0.2, 0.3])
-def test_rerank_receives_all_candidates_without_prefiltering_by_embedding_threshold(mock_embed, mock_query, mock_rerank):
+def test_rerank_receives_all_candidates_without_prefiltering_by_embedding_threshold(
+    mock_embed, mock_query, mock_lexical, mock_rerank
+):
     """Caso real que motivó este cambio: "Materia: Cálculo Diferencial"
     tenía una similitud de embeddings (0.27) por debajo de
     SIMILARITY_THRESHOLD (0.35) -- y hasta menor que una fila de "Álgebra

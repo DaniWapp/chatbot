@@ -14,3 +14,4 @@ httpx==0.28.1
 bcrypt==4.2.1
 python-multipart==0.0.20
 tzdata
+rank_bm25

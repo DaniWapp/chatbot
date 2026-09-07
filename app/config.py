@@ -119,6 +119,16 @@ class Settings:
     # resuelve el caso real, no se sube más sin evidencia de que haga falta.
     RERANK_CANDIDATE_K: int = _get_int("RERANK_CANDIDATE_K", 20)
     RERANK_MIN_SCORE: float = _get_float("RERANK_MIN_SCORE", 0.05)
+    # Candidatos adicionales por coincidencia léxica exacta (BM25, ver
+    # vector_store.lexical_query), sumados a los de RERANK_CANDIDATE_K
+    # antes de re-rankear. Necesario porque ampliar solo el pool semántico
+    # no escala: en un corpus real de 516 fragmentos, "Materia: Cálculo
+    # Diferencial" cayó al puesto #213 por embeddings (misma confusión de
+    # siempre con "Álgebra Lineal", agravada por más documentos
+    # compitiendo) -- rerankear 213 candidatos tomaría varios segundos en
+    # cada pregunta. BM25 la encuentra en el puesto #1 por coincidencia
+    # literal de palabras, sin importar el tamaño del corpus.
+    LEXICAL_CANDIDATE_K: int = _get_int("LEXICAL_CANDIDATE_K", 10)
 
     # --- Historial ---
     MAX_HISTORY_TURNS: int = _get_int("MAX_HISTORY_TURNS", 3)
