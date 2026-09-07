@@ -36,8 +36,6 @@ const dashboardTabButtonEl = document.getElementById("dashboard-tab-button");
 const moderacionTabButtonEl = document.getElementById("moderacion-tab-button");
 const widgetTabButtonEl = document.getElementById("widget-tab-button");
 const horarioTabButtonEl = document.getElementById("horario-tab-button");
-const modalOverlayEl = document.getElementById("modal-overlay");
-const modalContentEl = document.getElementById("modal-content");
 
 const SENDER_LABELS = { student: "Estudiante", assistant: "Asistente", advisor: "Asesor" };
 
@@ -176,83 +174,9 @@ document.querySelectorAll(".panel-tab").forEach((tab) => {
   });
 });
 
-// --- Modal genérico ------------------------------------------------------
-
-function openModal(html, { wide = false } = {}) {
-  modalContentEl.className = wide ? "modal-content wide" : "modal-content";
-  modalContentEl.innerHTML = html;
-  modalOverlayEl.hidden = false;
-  const cancelButton = modalContentEl.querySelector(".cancel-button");
-  if (cancelButton) cancelButton.addEventListener("click", closeModal);
-}
-
-function closeModal() {
-  modalOverlayEl.hidden = true;
-  modalContentEl.innerHTML = "";
-}
-
-modalOverlayEl.addEventListener("click", (e) => {
-  if (e.target === modalOverlayEl) closeModal();
-});
-
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-async function errorDetail(res) {
-  const body = await res.json().catch(() => ({}));
-  if (Array.isArray(body.detail)) {
-    return body.detail.map((d) => d.msg).join(" ") || "Ocurrió un error.";
-  }
-  return body.detail || "Ocurrió un error.";
-}
-
 // --- Dashboard (pestaña): general ve agregado de todas las dependencias, dependencia solo lo suyo ---
 
 let panelDashboardChart = null;
-
-function formatMinutes(minutes) {
-  if (minutes == null) return "—";
-  if (minutes < 60) return `${minutes.toFixed(1)} min`;
-  return `${(minutes / 60).toFixed(1)} h`;
-}
-
-function dashboardCardHtml(label, value, extraClass) {
-  return `
-    <div class="dashboard-card${extraClass ? " " + extraClass : ""}">
-      <span class="dashboard-card-value">${value}</span>
-      <span class="dashboard-card-label">${escapeHtml(label)}</span>
-    </div>
-  `;
-}
-
-function dashboardSummaryHtml(dashboard) {
-  const c = dashboard.conversations;
-  const d = dashboard.documents;
-  const f = dashboard.faq;
-  const cards = [
-    ["Pendientes ahora", c.pending_now],
-    ["Conversaciones escaladas", c.total_escalated],
-    ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
-    ["Documentos indexados", d.total],
-    ["FAQ pendientes por revisar", f.pending],
-  ];
-  return cards.map(([label, value]) => dashboardCardHtml(label, value, "dashboard-card-hero")).join("");
-}
-
-function dashboardSectionHtml(title, summaryHtml, detailHtml) {
-  return `
-    <details class="dashboard-section">
-      <summary>
-        <span class="dashboard-section-title">${escapeHtml(title)}</span>
-        <span class="dashboard-section-preview">${summaryHtml}</span>
-      </summary>
-      <div class="dashboard-section-detail">${detailHtml}</div>
-    </details>
-  `;
-}
 
 function buildConversacionesSectionPanel(dashboard, isGeneral) {
   const c = dashboard.conversations;
@@ -392,22 +316,8 @@ function dependenciaNameById(id) {
   return dep ? dep.name : "—";
 }
 
-function documentDependenciaOptionsHtml(selectedId) {
-  const generalOption = `<option value="" ${selectedId == null ? "selected" : ""}>General / compartido</option>`;
-  const depOptions = dependenciasForReassign
-    .map((d) => `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${escapeHtml(d.name)}</option>`)
-    .join("");
-  return generalOption + depOptions;
-}
-
 let allPanelDocuments = [];
 let panelDocumentDependenciaFilter = "all"; // "all" | "general" | <dependencia_id numérico>
-
-function panelDocumentMatchesDependenciaFilter(doc) {
-  if (panelDocumentDependenciaFilter === "all") return true;
-  if (panelDocumentDependenciaFilter === "general") return doc.dependencia_id == null;
-  return doc.dependencia_id === Number(panelDocumentDependenciaFilter);
-}
 
 function renderPanelDocumentDependenciaChips(isGeneral) {
   const container = document.getElementById("panel-documents-dependencia-chips");
@@ -447,7 +357,7 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
   const filtered = allPanelDocuments.filter(
     (doc) =>
       (!query || doc.filename.toLowerCase().includes(query)) &&
-      (!isGeneral || panelDocumentMatchesDependenciaFilter(doc))
+      (!isGeneral || documentMatchesDependenciaFilter(doc, panelDocumentDependenciaFilter))
   );
 
   const emptyEl = document.getElementById("panel-documents-empty");
@@ -481,7 +391,7 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
 
       const depCell = isGeneral ? `<td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>` : "";
       const recategorizeControl = isGeneral
-        ? `<select class="doc-dependencia-select" data-filename="${escapeHtml(doc.filename)}">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select>`
+        ? `<select class="doc-dependencia-select" data-filename="${escapeHtml(doc.filename)}">${documentDependenciaOptionsHtml(doc.dependencia_id, dependenciasForReassign)}</select>`
         : "";
       const vigenciaCell = isGeneral
         ? `<td><input type="date" class="doc-vigencia-input" data-filename="${escapeHtml(doc.filename)}" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>`
@@ -568,8 +478,6 @@ async function loadDocuments() {
 document.getElementById("panel-documents-search").addEventListener("input", () => rerenderPanelDocumentsTable(getAdminRole() === "general"));
 document.getElementById("panel-new-document-button").addEventListener("click", openUploadDocumentModal);
 
-const PANEL_IMAGE_EXTENSION_PATTERN = /\.(jpe?g|png|webp)$/i;
-
 function openUploadDocumentModal() {
   const isGeneral = getAdminRole() === "general";
   const ownDependenciaName = dependenciaNameById(getAdminDependenciaId());
@@ -588,7 +496,7 @@ function openUploadDocumentModal() {
       ${
         isGeneral
           ? `<label>Dependencia (opcional)
-              <select id="panel-upload-document-dependencia">${documentDependenciaOptionsHtml(null)}</select>
+              <select id="panel-upload-document-dependencia">${documentDependenciaOptionsHtml(null, dependenciasForReassign)}</select>
             </label>`
           : ""
       }
@@ -636,7 +544,7 @@ function openUploadDocumentModal() {
     const errorEl = document.getElementById("panel-upload-document-error");
     const file = fileInput.files[0];
     if (!file) return;
-    const isImage = PANEL_IMAGE_EXTENSION_PATTERN.test(file.name);
+    const isImage = IMAGE_EXTENSION_PATTERN.test(file.name);
 
     errorEl.hidden = true;
 
@@ -863,23 +771,9 @@ function playNotificationSound() {
   }
 }
 
-function formatTime(isoString) {
-  try {
-    return new Date(isoString).toLocaleString();
-  } catch {
-    return isoString;
-  }
-}
-
 function truncate(text, maxLength) {
   const singleLine = (text || "").replace(/\s+/g, " ").trim();
   return singleLine.length > maxLength ? singleLine.slice(0, maxLength - 1) + "…" : singleLine;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 function getSession(sessionId) {
@@ -1455,152 +1349,65 @@ document.addEventListener("visibilitychange", () => {
 
 // --- Moderación: detector de hostilidad -----------------------------------
 
-async function loadPanelHostilityKeywords() {
-  const res = await adminFetch("/api/admin/hostility-keywords");
-  const keywords = await res.json();
-  renderPanelHostilityKeywordsTable(keywords);
-}
-
-function renderPanelHostilityKeywordsTable(keywords) {
-  const tbody = document.getElementById("panel-hostility-keywords-table-body");
-  const emptyEl = document.getElementById("panel-hostility-keywords-empty");
-  tbody.innerHTML = "";
-  emptyEl.hidden = keywords.length > 0;
-
-  for (const keyword of keywords) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(keyword.phrase)}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
-        </div>
-      </td>
-    `;
-    tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deletePanelHostilityKeyword(keyword));
-    tbody.appendChild(tr);
-  }
-}
-
-document.getElementById("panel-new-hostility-keyword-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("panel-new-hostility-keyword-input");
-  const errorEl = document.getElementById("panel-hostility-keyword-error");
-  const phrase = input.value.trim();
-  if (!phrase) return;
-
-  errorEl.hidden = true;
-  try {
-    const res = await adminFetch("/api/admin/hostility-keywords", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phrase }),
-    });
-    if (!res.ok) {
-      errorEl.textContent = await errorDetail(res);
-      errorEl.hidden = false;
-      return;
-    }
-    input.value = "";
-    await loadPanelHostilityKeywords();
-  } catch {
-    // adminFetch ya maneja el caso de sesión inválida.
-  }
+const panelHostilityKeywordsTab = wireSimpleListTab({
+  fetchFn: adminFetch,
+  listUrl: "/api/admin/hostility-keywords",
+  createUrl: "/api/admin/hostility-keywords",
+  deleteUrlFor: (keyword) => `/api/admin/hostility-keywords/${keyword.id}`,
+  createBody: (phrase) => ({ phrase }),
+  formId: "panel-new-hostility-keyword-form",
+  inputId: "panel-new-hostility-keyword-input",
+  errorId: "panel-hostility-keyword-error",
+  tbodyId: "panel-hostility-keywords-table-body",
+  emptyId: "panel-hostility-keywords-empty",
+  deleteButtonSelector: ".delete-hostility-keyword-button",
+  rowHtml: (keyword) => `
+    <td>${escapeHtml(keyword.phrase)}</td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
+      </div>
+    </td>
+  `,
+  confirmMessage: (keyword) => `¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`,
 });
 
-async function deletePanelHostilityKeyword(keyword) {
-  if (!confirm(`¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`)) return;
-  try {
-    const res = await adminFetch(`/api/admin/hostility-keywords/${keyword.id}`, { method: "DELETE" });
-    if (!res.ok) alert(await errorDetail(res));
-    await loadPanelHostilityKeywords();
-  } catch {
-    // adminFetch ya maneja el caso de sesión inválida.
-  }
+async function loadPanelHostilityKeywords() {
+  await panelHostilityKeywordsTab.load();
 }
 
 // --- Widget embebible: orígenes permitidos --------------------------------
 
+const panelWidgetOriginsTab = wireSimpleListTab({
+  fetchFn: adminFetch,
+  listUrl: "/api/admin/widget-origins",
+  createUrl: "/api/admin/widget-origins",
+  deleteUrlFor: (origin) => `/api/admin/widget-origins/${origin.id}`,
+  createBody: (origin) => ({ origin }),
+  formId: "panel-new-widget-origin-form",
+  inputId: "panel-new-widget-origin-input",
+  errorId: "panel-widget-origin-error",
+  tbodyId: "panel-widget-origins-table-body",
+  emptyId: "panel-widget-origins-empty",
+  deleteButtonSelector: ".delete-widget-origin-button",
+  rowHtml: (origin) => `
+    <td>${escapeHtml(origin.origin)}</td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
+      </div>
+    </td>
+  `,
+  confirmMessage: (origin) => `¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`,
+});
+
 async function loadPanelWidgetOrigins() {
-  const res = await adminFetch("/api/admin/widget-origins");
-  const origins = await res.json();
-  renderPanelWidgetOriginsTable(origins);
+  await panelWidgetOriginsTab.load();
   document.getElementById("panel-widget-snippet-code").textContent =
     `<script src="${location.origin}/static/widget-loader.js"></scr` + `ipt>`;
 }
 
-function renderPanelWidgetOriginsTable(origins) {
-  const tbody = document.getElementById("panel-widget-origins-table-body");
-  const emptyEl = document.getElementById("panel-widget-origins-empty");
-  tbody.innerHTML = "";
-  emptyEl.hidden = origins.length > 0;
-
-  for (const origin of origins) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(origin.origin)}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
-        </div>
-      </td>
-    `;
-    tr.querySelector(".delete-widget-origin-button").addEventListener("click", () => deletePanelWidgetOrigin(origin));
-    tbody.appendChild(tr);
-  }
-}
-
-document.getElementById("panel-new-widget-origin-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("panel-new-widget-origin-input");
-  const errorEl = document.getElementById("panel-widget-origin-error");
-  const origin = input.value.trim();
-  if (!origin) return;
-
-  errorEl.hidden = true;
-  try {
-    const res = await adminFetch("/api/admin/widget-origins", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin }),
-    });
-    if (!res.ok) {
-      errorEl.textContent = await errorDetail(res);
-      errorEl.hidden = false;
-      return;
-    }
-    input.value = "";
-    await loadPanelWidgetOrigins();
-  } catch {
-    // adminFetch ya maneja el caso de sesión inválida.
-  }
-});
-
-async function deletePanelWidgetOrigin(origin) {
-  if (!confirm(`¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`)) return;
-  try {
-    const res = await adminFetch(`/api/admin/widget-origins/${origin.id}`, { method: "DELETE" });
-    if (!res.ok) alert(await errorDetail(res));
-    await loadPanelWidgetOrigins();
-  } catch {
-    // adminFetch ya maneja el caso de sesión inválida.
-  }
-}
-
 // --- Horario de atención ---------------------------------------------------
-
-const PANEL_HORARIO_DIA_LABELS = { 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom" };
-
-function panelHorarioRangoRowHtml(inicio, fin) {
-  return `
-    <div class="horario-rango-row">
-      <input type="time" class="horario-rango-inicio" value="${inicio || ""}" required />
-      <span>a</span>
-      <input type="time" class="horario-rango-fin" value="${fin || ""}" required />
-      <button type="button" class="danger remove-rango-button">Quitar</button>
-    </div>
-  `;
-}
 
 function panelHorarioFormHtml(dep) {
   const diasActuales = new Set(dep.horario_dias || []);
@@ -1609,7 +1416,7 @@ function panelHorarioFormHtml(dep) {
     <form id="panel-horario-form" class="modal-form" data-dependencia-id="${dep.id}">
       <label>Días de atención</label>
       <div class="horario-dias-checks">
-        ${Object.entries(PANEL_HORARIO_DIA_LABELS)
+        ${Object.entries(HORARIO_DIA_LABELS)
           .map(
             ([value, label]) => `
               <label class="horario-dia-check">
@@ -1622,7 +1429,7 @@ function panelHorarioFormHtml(dep) {
       </div>
       <label>Bloques de horario (uno por franja, ej. mañana y tarde)</label>
       <div id="panel-horario-rangos-list">
-        ${rangosActuales.map(([inicio, fin]) => panelHorarioRangoRowHtml(inicio, fin)).join("")}
+        ${rangosActuales.map(([inicio, fin]) => horarioRangoRowHtml(inicio, fin)).join("")}
       </div>
       <button type="button" id="panel-add-horario-rango-button" class="modal-secondary-button">+ Agregar bloque</button>
       <p id="panel-horario-form-error" class="modal-error" hidden></p>
@@ -1646,7 +1453,7 @@ function wirePanelHorarioForm(onSaved) {
   wireRemoveButtons();
 
   document.getElementById("panel-add-horario-rango-button").addEventListener("click", () => {
-    rangosListEl.insertAdjacentHTML("beforeend", panelHorarioRangoRowHtml("", ""));
+    rangosListEl.insertAdjacentHTML("beforeend", horarioRangoRowHtml("", ""));
     wireRemoveButtons();
   });
 

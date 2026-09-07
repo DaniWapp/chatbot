@@ -7,8 +7,6 @@ const rootAppEl = document.getElementById("root-app");
 const adminDisplayNameEl = document.getElementById("admin-display-name");
 const logoutButtonEl = document.getElementById("logout-button");
 const changePasswordButtonEl = document.getElementById("change-password-button");
-const modalOverlayEl = document.getElementById("modal-overlay");
-const modalContentEl = document.getElementById("modal-content");
 
 // Claves de localStorage propias (distintas de las de panel.js): ambas
 // páginas viven en el mismo origen, así que si compartieran nombre de
@@ -132,39 +130,6 @@ document.querySelectorAll(".root-tab").forEach((tab) => {
   });
 });
 
-// --- Modal genérico ------------------------------------------------------
-
-function openModal(html, { wide = false } = {}) {
-  modalContentEl.className = wide ? "modal-content wide" : "modal-content";
-  modalContentEl.innerHTML = html;
-  modalOverlayEl.hidden = false;
-  const cancelButton = modalContentEl.querySelector(".cancel-button");
-  if (cancelButton) cancelButton.addEventListener("click", closeModal);
-}
-
-function closeModal() {
-  modalOverlayEl.hidden = true;
-  modalContentEl.innerHTML = "";
-}
-
-modalOverlayEl.addEventListener("click", (e) => {
-  if (e.target === modalOverlayEl) closeModal();
-});
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-async function errorDetail(res) {
-  const body = await res.json().catch(() => ({}));
-  if (Array.isArray(body.detail)) {
-    return body.detail.map((d) => d.msg).join(" ") || "Ocurrió un error.";
-  }
-  return body.detail || "Ocurrió un error.";
-}
-
 // --- Dependencias --------------------------------------------------------
 
 async function loadDependencias() {
@@ -198,19 +163,6 @@ function renderDependenciasTable() {
     tr.querySelector(".delete-button").addEventListener("click", () => deleteDependencia(dep));
     tbody.appendChild(tr);
   }
-}
-
-const HORARIO_DIA_LABELS = { 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom" };
-
-function horarioRangoRowHtml(inicio, fin) {
-  return `
-    <div class="horario-rango-row">
-      <input type="time" class="horario-rango-inicio" value="${inicio || ""}" required />
-      <span>a</span>
-      <input type="time" class="horario-rango-fin" value="${fin || ""}" required />
-      <button type="button" class="danger remove-rango-button">Quitar</button>
-    </div>
-  `;
 }
 
 function openHorarioModal(dep, baseUrl) {
@@ -610,47 +562,6 @@ changePasswordButtonEl.addEventListener("click", () => {
 let dashboardConversationsChart = null;
 let dashboardGroqChart = null;
 
-function formatMinutes(minutes) {
-  if (minutes == null) return "—";
-  if (minutes < 60) return `${minutes.toFixed(1)} min`;
-  return `${(minutes / 60).toFixed(1)} h`;
-}
-
-function dashboardCardHtml(label, value, extraClass) {
-  return `
-    <div class="dashboard-card${extraClass ? " " + extraClass : ""}">
-      <span class="dashboard-card-value">${value}</span>
-      <span class="dashboard-card-label">${escapeHtml(label)}</span>
-    </div>
-  `;
-}
-
-function dashboardSummaryHtml(dashboard) {
-  const c = dashboard.conversations;
-  const d = dashboard.documents;
-  const f = dashboard.faq;
-  const cards = [
-    ["Pendientes ahora", c.pending_now],
-    ["Conversaciones escaladas", c.total_escalated],
-    ["Primera respuesta (promedio)", formatMinutes(c.avg_first_response_minutes)],
-    ["Documentos indexados", d.total],
-    ["FAQ pendientes por revisar", f.pending],
-  ];
-  return cards.map(([label, value]) => dashboardCardHtml(label, value, "dashboard-card-hero")).join("");
-}
-
-function dashboardSectionHtml(title, summaryHtml, detailHtml) {
-  return `
-    <details class="dashboard-section">
-      <summary>
-        <span class="dashboard-section-title">${escapeHtml(title)}</span>
-        <span class="dashboard-section-preview">${summaryHtml}</span>
-      </summary>
-      <div class="dashboard-section-detail">${detailHtml}</div>
-    </details>
-  `;
-}
-
 function buildConversacionesSection(dashboard) {
   const c = dashboard.conversations;
   const summaryHtml = `${c.total_escalated} escaladas · ${c.pending_now} pendientes · ${c.resolved} resueltas`;
@@ -950,12 +861,6 @@ document.getElementById("institution-form").addEventListener("submit", async (e)
 
 let documents = [];
 
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 let documentDependenciaFilter = "all"; // "all" | "general" | <dependencia_id numérico>
 
 async function loadDocuments() {
@@ -990,20 +895,6 @@ function renderDocumentDependenciaChips() {
   });
 }
 
-function documentMatchesDependenciaFilter(doc) {
-  if (documentDependenciaFilter === "all") return true;
-  if (documentDependenciaFilter === "general") return doc.dependencia_id == null;
-  return doc.dependencia_id === Number(documentDependenciaFilter);
-}
-
-function documentDependenciaOptionsHtml(selectedId) {
-  const generalOption = `<option value="" ${selectedId == null ? "selected" : ""}>General / compartido</option>`;
-  const depOptions = dependencias
-    .map((d) => `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${escapeHtml(d.name)}</option>`)
-    .join("");
-  return generalOption + depOptions;
-}
-
 function renderDocumentsTable() {
   const tbody = document.getElementById("documents-table-body");
   const emptyEl = document.getElementById("documents-empty");
@@ -1012,7 +903,7 @@ function renderDocumentsTable() {
 
   const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
   const filteredDocuments = documents.filter(
-    (doc) => (!query || doc.filename.toLowerCase().includes(query)) && documentMatchesDependenciaFilter(doc)
+    (doc) => (!query || doc.filename.toLowerCase().includes(query)) && documentMatchesDependenciaFilter(doc, documentDependenciaFilter)
   );
 
   emptyEl.hidden = filteredDocuments.length > 0;
@@ -1041,7 +932,7 @@ function renderDocumentsTable() {
     tr.innerHTML = `
       <td>${escapeHtml(doc.filename)}</td>
       <td>${formatSize(doc.size_bytes)}</td>
-      <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id)}</select></td>
+      <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id, dependencias)}</select></td>
       <td><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
       <td>
         <div class="row-actions">
@@ -1168,8 +1059,6 @@ async function reactivateDocument(doc) {
 }
 
 document.getElementById("documents-search").addEventListener("input", renderDocumentsTable);
-
-const IMAGE_EXTENSION_PATTERN = /\.(jpe?g|png|webp)$/i;
 
 document.getElementById("new-document-button").addEventListener("click", () => {
   openModal(`
@@ -1299,14 +1188,6 @@ document.getElementById("new-document-button").addEventListener("click", () => {
 
 let faqCandidates = [];
 
-function formatTime(isoString) {
-  try {
-    return new Date(isoString).toLocaleString();
-  } catch {
-    return isoString;
-  }
-}
-
 function dependenciaLabelFor(dependenciaId) {
   if (dependenciaId == null) return "General / compartido";
   const dep = dependencias.find((d) => d.id === dependenciaId);
@@ -1394,136 +1275,62 @@ function renderFaqCandidates() {
 
 // --- Moderación: detector de hostilidad -----------------------------------
 
-async function loadHostilityKeywords() {
-  const res = await rootFetch("/api/root/hostility-keywords");
-  const keywords = await res.json();
-  renderHostilityKeywordsTable(keywords);
-}
-
-function renderHostilityKeywordsTable(keywords) {
-  const tbody = document.getElementById("hostility-keywords-table-body");
-  const emptyEl = document.getElementById("hostility-keywords-empty");
-  tbody.innerHTML = "";
-  emptyEl.hidden = keywords.length > 0;
-
-  for (const keyword of keywords) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(keyword.phrase)}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
-        </div>
-      </td>
-    `;
-    tr.querySelector(".delete-hostility-keyword-button").addEventListener("click", () => deleteHostilityKeyword(keyword));
-    tbody.appendChild(tr);
-  }
-}
-
-document.getElementById("new-hostility-keyword-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("new-hostility-keyword-input");
-  const errorEl = document.getElementById("hostility-keyword-error");
-  const phrase = input.value.trim();
-  if (!phrase) return;
-
-  errorEl.hidden = true;
-  try {
-    const res = await rootFetch("/api/root/hostility-keywords", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phrase }),
-    });
-    if (!res.ok) {
-      errorEl.textContent = await errorDetail(res);
-      errorEl.hidden = false;
-      return;
-    }
-    input.value = "";
-    await loadHostilityKeywords();
-  } catch {
-    // rootFetch ya maneja el caso de sesión inválida.
-  }
+const hostilityKeywordsTab = wireSimpleListTab({
+  fetchFn: rootFetch,
+  listUrl: "/api/root/hostility-keywords",
+  createUrl: "/api/root/hostility-keywords",
+  deleteUrlFor: (keyword) => `/api/root/hostility-keywords/${keyword.id}`,
+  createBody: (phrase) => ({ phrase }),
+  formId: "new-hostility-keyword-form",
+  inputId: "new-hostility-keyword-input",
+  errorId: "hostility-keyword-error",
+  tbodyId: "hostility-keywords-table-body",
+  emptyId: "hostility-keywords-empty",
+  deleteButtonSelector: ".delete-hostility-keyword-button",
+  rowHtml: (keyword) => `
+    <td>${escapeHtml(keyword.phrase)}</td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="danger delete-hostility-keyword-button">Eliminar</button>
+      </div>
+    </td>
+  `,
+  confirmMessage: (keyword) => `¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`,
 });
 
-async function deleteHostilityKeyword(keyword) {
-  if (!confirm(`¿Eliminar "${keyword.phrase}" de la lista de hostilidad?`)) return;
-  try {
-    const res = await rootFetch(`/api/root/hostility-keywords/${keyword.id}`, { method: "DELETE" });
-    if (!res.ok) alert(await errorDetail(res));
-    await loadHostilityKeywords();
-  } catch {
-    // rootFetch ya maneja el caso de sesión inválida.
-  }
+async function loadHostilityKeywords() {
+  await hostilityKeywordsTab.load();
 }
 
 // --- Widget embebible: orígenes permitidos --------------------------------
 
-async function loadWidgetOrigins() {
-  const res = await rootFetch("/api/root/widget-origins");
-  const origins = await res.json();
-  renderWidgetOriginsTable(origins);
-  document.getElementById("widget-snippet-code").textContent =
-    `<script src="${location.origin}/static/widget-loader.js"></scr` + `ipt>`;
-}
-
-function renderWidgetOriginsTable(origins) {
-  const tbody = document.getElementById("widget-origins-table-body");
-  const emptyEl = document.getElementById("widget-origins-empty");
-  tbody.innerHTML = "";
-  emptyEl.hidden = origins.length > 0;
-
-  for (const origin of origins) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(origin.origin)}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
-        </div>
-      </td>
-    `;
-    tr.querySelector(".delete-widget-origin-button").addEventListener("click", () => deleteWidgetOrigin(origin));
-    tbody.appendChild(tr);
-  }
-}
-
-document.getElementById("new-widget-origin-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("new-widget-origin-input");
-  const errorEl = document.getElementById("widget-origin-error");
-  const origin = input.value.trim();
-  if (!origin) return;
-
-  errorEl.hidden = true;
-  try {
-    const res = await rootFetch("/api/root/widget-origins", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin }),
-    });
-    if (!res.ok) {
-      errorEl.textContent = await errorDetail(res);
-      errorEl.hidden = false;
-      return;
-    }
-    input.value = "";
-    await loadWidgetOrigins();
-  } catch {
-    // rootFetch ya maneja el caso de sesión inválida.
-  }
+const widgetOriginsTab = wireSimpleListTab({
+  fetchFn: rootFetch,
+  listUrl: "/api/root/widget-origins",
+  createUrl: "/api/root/widget-origins",
+  deleteUrlFor: (origin) => `/api/root/widget-origins/${origin.id}`,
+  createBody: (origin) => ({ origin }),
+  formId: "new-widget-origin-form",
+  inputId: "new-widget-origin-input",
+  errorId: "widget-origin-error",
+  tbodyId: "widget-origins-table-body",
+  emptyId: "widget-origins-empty",
+  deleteButtonSelector: ".delete-widget-origin-button",
+  rowHtml: (origin) => `
+    <td>${escapeHtml(origin.origin)}</td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="danger delete-widget-origin-button">Eliminar</button>
+      </div>
+    </td>
+  `,
+  confirmMessage: (origin) => `¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`,
 });
 
-async function deleteWidgetOrigin(origin) {
-  if (!confirm(`¿Quitar "${origin.origin}" de los sitios permitidos para embeber el widget?`)) return;
-  try {
-    const res = await rootFetch(`/api/root/widget-origins/${origin.id}`, { method: "DELETE" });
-    if (!res.ok) alert(await errorDetail(res));
-    await loadWidgetOrigins();
-  } catch {
-    // rootFetch ya maneja el caso de sesión inválida.
-  }
+async function loadWidgetOrigins() {
+  await widgetOriginsTab.load();
+  document.getElementById("widget-snippet-code").textContent =
+    `<script src="${location.origin}/static/widget-loader.js"></scr` + `ipt>`;
 }
 
 // --- Arranque ----------------------------------------------------------
