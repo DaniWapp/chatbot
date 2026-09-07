@@ -19,8 +19,8 @@ chatbot-master/
 │   │   ├── document_loader.py    # Extrae texto de PDF/DOCX/TXT/XLSX
 │   │   ├── chunker.py            # Divide el texto en fragmentos indexables
 │   │   ├── embeddings.py         # Genera los vectores semánticos (local)
-│   │   ├── vector_store.py       # Base vectorial FAISS (guardar/buscar/borrar)
-│   │   ├── retriever.py          # Búsqueda semántica + umbrales de relevancia
+│   │   ├── vector_store.py       # Base vectorial FAISS + índice léxico BM25 (guardar/buscar/borrar)
+│   │   ├── retriever.py          # Combina búsqueda semántica + léxica, re-rankea
 │   │   ├── llm.py                # Cliente Groq: prompts y llamadas al modelo
 │   │   └── rate_limiter.py       # Autolímite de peticiones/tokens hacia Groq
 │   ├── services/                 # Lógica de negocio (usada por las rutas)

@@ -28,14 +28,16 @@ imprescindible para leerlo.
 ## 1. Pregunta al asistente virtual (chat en vivo)
 
 Ver [flujo-chat-en-vivo.md](flujo-chat-en-vivo.md) para el detalle de
-cada paso, incluida una medición real de tiempos.
+cada paso con tiempos reales medidos, y
+[busqueda-lexica-bm25.md](busqueda-lexica-bm25.md) para el mecanismo
+completo (semántica + léxica + re-ranking) dentro de "Retriever".
 
 ```mermaid
 sequenceDiagram
     actor Estudiante
     participant FE as "Frontend (script.js)"
     participant API as "chat_service.stream_answer"
-    participant RAG as "Retriever + FAISS"
+    participant RAG as "Retriever (FAISS + BM25 + re-ranking)"
     participant Groq
     participant DB as "SQLite (turns, chat_metrics)"
 
@@ -43,7 +45,7 @@ sequenceDiagram
     FE->>API: POST /api/chat/stream
     API->>API: needs_human(session_id)? -> No
     API->>RAG: retrieve_context(pregunta)
-    RAG-->>API: fragmentos relevantes (~20ms, sin Groq)
+    RAG-->>API: fragmentos relevantes (sin Groq -- el re-ranking es el costo real)
     API-->>FE: SSE "meta" {sources}
     API->>Groq: chat.completions.create(stream=True)
     loop cada fragmento de texto

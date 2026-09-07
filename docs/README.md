@@ -66,6 +66,11 @@ detallados, y guías para usuarios concretos.
 - **[conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md)** --
   glosario: qué es un chunk, qué es la ingesta, qué hace FAISS y cómo, y
   dónde vive cada cosa (SQLite vs. archivos del índice vectorial).
+- **[busqueda-lexica-bm25.md](busqueda-lexica-bm25.md)** -- la segunda
+  vía de recuperación (coincidencia exacta de palabras, no de
+  significado): por qué hizo falta, cómo funciona la fórmula BM25 por
+  dentro, y un caso real calculado a mano y verificado contra la
+  librería.
 - **[conceptos-embeddings.md](conceptos-embeddings.md)** -- cómo una frase
   se convierte en un vector de 384 números paso a paso (tokenización,
   contextualización, pooling, normalización), con ejemplos reales

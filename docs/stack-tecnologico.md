@@ -34,6 +34,7 @@ exclusivamente en ese contexto — así evita inventar información.
 | **openai/gpt-oss-20b** | El modelo de lenguaje específico que usa el chatbot para generar respuestas, corriendo sobre la infraestructura de Groq. |
 | **Sentence Transformers** (`paraphrase-multilingual-MiniLM-L12-v2`) | Genera los *embeddings* (representación numérica del significado de un texto) de forma local y gratuita — no depende de una API externa ni de Groq. |
 | **FAISS** (Facebook AI Similarity Search) | Base de datos vectorial: almacena los embeddings de todos los documentos e indexa la búsqueda semántica por similitud de significado, no por coincidencia exacta de palabras. |
+| **rank_bm25** (BM25Okapi) | Búsqueda léxica complementaria: encuentra coincidencias exactas de palabras que la búsqueda semántica a veces no distingue bien entre dos temas parecidos — ver [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md). |
 | **Limitador de tasa propio** | Controla cuántas peticiones por minuto se le envían a Groq, para no exceder el límite del plan gratuito (30 peticiones/min) — las peticiones esperan su turno en vez de fallar. |
 
 ## 4. Frontend

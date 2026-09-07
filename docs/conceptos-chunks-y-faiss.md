@@ -107,16 +107,27 @@ El camino completo, desde que llega la pregunta:
    usado en la ingesta (tienen que caer en el mismo "espacio de
    significado" para poder compararse).
 2. FAISS compara ese vector contra todos los guardados y devuelve los
-   `RERANK_CANDIDATE_K` (10 por defecto) más parecidos, cada uno con su
-   similitud.
-3. Se descartan los que no superen `SIMILARITY_THRESHOLD` (0.35 por
-   defecto) -- ver más abajo cómo se calibró ese número con datos reales,
-   no a ojo.
-4. Un modelo de re-ranking (cross-encoder) reordena los candidatos que
-   quedan comparando la pregunta y cada fragmento **juntos** (no por
-   separado, como hace el embedding) para juzgar relevancia real, y
-   descarta los que no superen `RERANK_MIN_SCORE` (0.05 por defecto) --
-   corre local, sin costo de Groq. Ver `app/rag/retriever.py`.
+   `RERANK_CANDIDATE_K` (20 por defecto) más parecidos por embeddings,
+   cada uno con su similitud.
+3. **En paralelo, una búsqueda léxica (BM25)** compara las palabras
+   literales de la pregunta contra las de cada fragmento y devuelve hasta
+   `LEXICAL_CANDIDATE_K` (10 por defecto) candidatos adicionales --
+   ninguno de los dos conjuntos se descarta por similitud/puntaje todavía,
+   solo se unen sin duplicar por `chunk_id`. Hace falta porque el modelo
+   de embeddings a veces confunde dos temas cortos y parecidos (caso real
+   documentado en
+   [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md): "Cálculo
+   Diferencial" perdiendo contra "Álgebra Lineal" en la similitud de
+   embeddings) -- BM25 encuentra por coincidencia exacta de palabras lo
+   que al embedding se le escapa por significado.
+4. Un modelo de re-ranking (cross-encoder) reordena **todos** los
+   candidatos combinados comparando la pregunta y cada fragmento
+   **juntos** (no por separado, como hace el embedding) para juzgar
+   relevancia real, y descarta los que no superen `RERANK_MIN_SCORE`
+   (0.05 por defecto) -- corre local, sin costo de Groq. Ver
+   `app/rag/retriever.py`. Este paso, no `SIMILARITY_THRESHOLD`, es el
+   filtro de relevancia real cuando el re-ranking está activo (el caso
+   normal) -- ver más abajo.
 5. Se conservan los `TOP_K` (4 por defecto) mejores fragmentos que
    sobrevivieron, y esos son los que se envían como contexto al LLM junto
    con la pregunta -- puede haber menos de `TOP_K` si menos fragmentos
@@ -185,7 +196,17 @@ incluso fragmentos correctos. Tras aplicar sigmoide, datos reales de
 `SIMILARITY_THRESHOLD = 0.35` viene desde el primer commit del proyecto,
 sin ese mismo respaldo documentado -- así que se calibró después, con el
 mismo método, corriendo `evaluation/test_questions.json` (10 preguntas
-reales) contra el índice real:
+reales) contra el índice real. **Importante:** desde que se agregó la
+búsqueda léxica, este umbral solo se usa si `RERANK_ENABLED=False` (sin
+re-ranking, no hay un juez más preciso disponible). Con re-ranking
+activo -- el caso normal -- ya no se aplica antes de re-rankear: el
+filtro real pasó a ser `RERANK_MIN_SCORE`, precisamente porque un
+fragmento correcto puede tener una similitud de embeddings baja (ver
+[busqueda-lexica-bm25.md](busqueda-lexica-bm25.md)) y aun así ser
+exactamente lo que se necesita. La calibración de abajo sigue siendo
+válida como referencia de qué tan bien separa la similitud de embeddings
+lo relevante de lo irrelevante en este corpus, solo que ya no es la
+decisión final:
 
 - Las 7 preguntas con respuesta correcta obtuvieron similitud entre
   **0.42 y 0.73** -- todas sobre 0.35, con margen real.

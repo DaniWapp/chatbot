@@ -53,8 +53,10 @@ repiten lo ya cubierto.
 ### CU-02: Recibir sugerencias cuando no hay información suficiente
 
 - **Actor:** Estudiante.
-- **Precondición:** Ninguno de los fragmentos recuperados superó el
-  umbral de similitud (`SIMILARITY_THRESHOLD`).
+- **Precondición:** Ninguno de los fragmentos recuperados (por
+  embeddings ni por coincidencia léxica) fue considerado realmente
+  relevante por el re-ranker (`RERANK_MIN_SCORE`) -- ver
+  [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md).
 - **Flujo principal:**
   1. El sistema responde que no encontró información suficiente.
   2. Busca, entre todo el contenido indexado (sin aplicar el umbral),

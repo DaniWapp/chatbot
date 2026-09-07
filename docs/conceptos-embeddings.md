@@ -203,6 +203,11 @@ pregunta:
 > Chunk: "El auditorio principal tiene capacidad para 300 personas."
 > **Producto punto real: 0.0898**
 
-Con `TOP_K = 4` y 10 candidatos por pregunta (`RERANK_CANDIDATE_K`), el
+Con `TOP_K = 4` y 20 candidatos por pregunta (`RERANK_CANDIDATE_K`), el
 chunk de "inscripciones" gana un lugar en el contexto que se le envía al
-modelo; el del auditorio, con 0.09, ni siquiera compite.
+modelo; el del auditorio, con 0.09, casi nunca llega tan lejos. Dicho
+así es una simplificación -- el mecanismo real, con el filtro de
+relevancia movido al re-ranking y una segunda vía de búsqueda léxica,
+está en
+[conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md#cómo-se-usan-los-chunks-al-responder-una-pregunta)
+y en [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md).

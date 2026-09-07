@@ -31,8 +31,17 @@ sistemas", medida contra la base de datos local (`chat_metrics`, `turns`,
    aquí).
 2. **Recuperación** (`retrieve_context` → `app/rag/retriever.py::retrieve`):
    la pregunta se convierte en un embedding (`embed_query`) y se busca
-   contra el índice FAISS los fragmentos más similares. Es la parte
-   barata: en la medición real tomó **~20ms**, sin ninguna llamada a Groq.
+   contra el índice FAISS los fragmentos más similares, más una búsqueda
+   léxica en paralelo (BM25, ver
+   [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md)) -- sin ninguna
+   llamada a Groq. El costo real cambió respecto a una medición anterior
+   de este documento (~20ms): ese número era de antes de que existiera el
+   re-ranking con el pool de candidatos actual. Medido en producción hoy
+   (VPS de 2 núcleos): `embed_query` ~400ms, la búsqueda por FAISS y la
+   léxica (BM25) unos pocos ms cada una, y el **re-ranking es ahora el
+   costo dominante** -- entre ~500ms y varios segundos, según cuántos
+   candidatos haya que comparar y qué tan cargada esté la CPU del
+   servidor en ese momento (es una operación de CPU, no de red).
 3. Se arma el `CONTEXTO` concatenando esos fragmentos (`build_context`) y
    se trae el historial reciente de la conversación (`get_history`).
 4. Se emite el primer evento SSE: `{"type": "meta", "sources": [...]}`,
