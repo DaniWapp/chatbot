@@ -59,7 +59,16 @@ def drop_superseded_by_vigencia(question: str, chunks: List[RetrievedChunk]) -> 
     return [c for c in chunks if c.document not in superados]
 
 
-def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
+def _matches_dependencia(hit: dict, dependencia_id: Optional[int]) -> bool:
+    """Un chunk pasa el filtro si no se pidió filtrar, si el chunk es de
+    alcance general (sin dependencia asignada -- ej. calendario académico,
+    reglamento general), o si coincide con la dependencia pedida."""
+    if dependencia_id is None:
+        return True
+    return hit.get("dependencia_id") in (None, dependencia_id)
+
+
+def retrieve(question: str, top_k: int = None, dependencia_id: Optional[int] = None) -> List[RetrievedChunk]:
     """Recupera los fragmentos más relevantes para una pregunta.
 
     Trae un lote amplio de candidatos por embeddings (RERANK_CANDIDATE_K)
@@ -86,16 +95,25 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     como antes, solo sobre la vía semántica. Puede devolver una lista
     vacía: el chatbot debe entonces reconocer que no tiene información
     suficiente, en vez de alucinar.
+
+    Si dependencia_id no es None (el estudiante eligió una dependencia en
+    el selector del chat), se descartan los candidatos de OTRA dependencia
+    antes de re-rankear -- los de alcance general (sin dependencia
+    asignada) siempre se conservan, para no esconder documentos
+    institucionales (calendario, reglamento) solo porque el estudiante
+    filtró por una dependencia puntual.
     """
     top_k = top_k or settings.TOP_K
     query_embedding = embed_query(question)
     candidate_k = max(top_k, settings.RERANK_CANDIDATE_K)
-    hits = vector_store.query(query_embedding, top_k=candidate_k)
+    hits = [h for h in vector_store.query(query_embedding, top_k=candidate_k) if _matches_dependencia(h, dependencia_id)]
 
     if settings.RERANK_ENABLED:
         combined = {h["chunk_id"]: h for h in hits}
-        for h in vector_store.lexical_query(question, top_k=settings.LEXICAL_CANDIDATE_K):
-            combined.setdefault(h["chunk_id"], h)
+        lexical_hits = vector_store.lexical_query(question, top_k=settings.LEXICAL_CANDIDATE_K)
+        for h in lexical_hits:
+            if _matches_dependencia(h, dependencia_id):
+                combined.setdefault(h["chunk_id"], h)
         candidates = [_to_chunk(h) for h in combined.values()]
         if not candidates:
             return []
@@ -108,7 +126,9 @@ def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     return drop_superseded_by_vigencia(question, result)
 
 
-def retrieve_below_threshold(question: str, top_k: int = None) -> List[RetrievedChunk]:
+def retrieve_below_threshold(
+    question: str, top_k: int = None, dependencia_id: Optional[int] = None
+) -> List[RetrievedChunk]:
     """Como retrieve(), pero sin aplicar SIMILARITY_THRESHOLD -- se usa
     únicamente para alimentar sugerencias de reformulación cuando el
     chatbot ya determinó que no tiene información suficiente (ver
@@ -118,7 +138,7 @@ def retrieve_below_threshold(question: str, top_k: int = None) -> List[Retrieved
     top_k = top_k or settings.TOP_K
     query_embedding = embed_query(question)
     hits = vector_store.query(query_embedding, top_k=top_k)
-    return [_to_chunk(h) for h in hits]
+    return [_to_chunk(h) for h in hits if _matches_dependencia(h, dependencia_id)]
 
 
 def build_context(chunks: List[RetrievedChunk]) -> str:

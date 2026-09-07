@@ -13,6 +13,20 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=100)
     message: str = Field(..., min_length=1, max_length=2000)
+    # Dependencia elegida por el estudiante en el selector del chat (opcional
+    # -- None significa "buscar en todo"). Acota la recuperación RAG a los
+    # documentos de esa dependencia (más los de alcance general, sin
+    # dependencia asignada) -- ver app/rag/retriever.py::retrieve().
+    dependencia_id: Optional[int] = None
+
+
+class DependenciaOption(BaseModel):
+    """Versión pública y mínima de una dependencia -- solo lo necesario para
+    poblar el selector del chat del estudiante, sin datos administrativos
+    (horario, descripción) que sí expone DependenciaResponse."""
+
+    id: int
+    name: str
 
 
 class SourceCitation(BaseModel):
@@ -89,6 +103,13 @@ class SessionMessage(BaseModel):
     message_type: str = "text"  # "text" | "checkin" | "checkin_response"
     feedback_rating: Optional[str] = None  # "up" | "down" | None, solo para respuestas del asistente
     sender_name: Optional[str] = None  # display_name del admin, solo cuando sender es "advisor"
+    # Los siguientes tres solo aplican a sender="assistant" -- lo que el
+    # estudiante vio en la respuesta en vivo (fuentes citadas, sugerencias
+    # de reformulación si no hubo información suficiente, y qué dependencia
+    # tenía filtrada), para reconstruirlo igual al recargar el historial.
+    sources: Optional[List[SourceCitation]] = None
+    suggestions: Optional[List[str]] = None
+    dependencia_id: Optional[int] = None
 
 
 class SessionHistoryPage(BaseModel):

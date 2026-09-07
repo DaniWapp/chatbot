@@ -16,11 +16,12 @@ conexión SQLite y un solo lock, expuestos aquí (get_connection/
 ensure_column) para que app/services/admin_service.py los reutilice sin
 duplicar el manejo de la conexión."""
 import datetime
+import json
 import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.config import settings
 
@@ -72,6 +73,17 @@ def _get_connection() -> sqlite3.Connection:
             """
         )
         _connection.execute("CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id)")
+        # Fuentes citadas, sugerencias de reformulación, y filtro de
+        # dependencia usados en este turno -- antes de esto solo se
+        # guardaba el texto de la pregunta/respuesta, así que al recargar
+        # el historial esa información (la caja "Archivos consultados", las
+        # sugerencias y el botón de escalar de un "no encontré información",
+        # y el aviso de qué dependencia estaba filtrada) desaparecía por
+        # completo aunque sí se había mostrado en la respuesta en vivo.
+        # NULL/vacío en turnos guardados antes de este cambio.
+        _ensure_column(_connection, "turns", "sources_json", "TEXT")
+        _ensure_column(_connection, "turns", "suggestions_json", "TEXT")
+        _ensure_column(_connection, "turns", "dependencia_id", "INTEGER")
         _connection.execute(
             """
             CREATE TABLE IF NOT EXISTS session_meta (
@@ -391,16 +403,38 @@ def get_history(session_id: str) -> List[Tuple[str, str]]:
     return [(q, a) for q, a in reversed(rows)]
 
 
-def append_turn(session_id: str, question: str, answer: str) -> str:
+def append_turn(
+    session_id: str,
+    question: str,
+    answer: str,
+    sources: Optional[List[Dict]] = None,
+    suggestions: Optional[List[str]] = None,
+    dependencia_id: Optional[int] = None,
+) -> str:
     """Guarda el turno y devuelve su timestamp (ISO 8601), para que el
     llamador pueda transmitirlo al panel de control en tiempo real con el
-    mismo valor exacto que quedó persistido."""
+    mismo valor exacto que quedó persistido.
+
+    sources/suggestions/dependencia_id son lo que el estudiante vio en la
+    respuesta en vivo (fuentes citadas, sugerencias de reformulación si no
+    hubo información suficiente, y qué dependencia tenía filtrada) -- se
+    guardan tal cual para poder reconstruir esa misma respuesta al recargar
+    el historial (ver _get_full_history_all). None/vacío si no aplican."""
     created_at = _now()
     with _lock:
         conn = _get_connection()
         conn.execute(
-            "INSERT INTO turns (session_id, question, answer, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, question, answer, created_at),
+            "INSERT INTO turns (session_id, question, answer, created_at, sources_json, suggestions_json, "
+            "dependencia_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                question,
+                answer,
+                created_at,
+                json.dumps(sources, ensure_ascii=False) if sources else None,
+                json.dumps(suggestions, ensure_ascii=False) if suggestions else None,
+                dependencia_id,
+            ),
         )
         conn.commit()
     return created_at
@@ -942,7 +976,8 @@ def _get_full_history_all(session_id: str) -> List[dict]:
     with _lock:
         conn = _get_connection()
         turn_rows = conn.execute(
-            "SELECT question, answer, created_at FROM turns WHERE session_id = ? ORDER BY id ASC",
+            "SELECT question, answer, created_at, sources_json, suggestions_json, dependencia_id FROM turns "
+            "WHERE session_id = ? ORDER BY id ASC",
             (session_id,),
         ).fetchall()
         admin_rows = conn.execute(
@@ -957,11 +992,17 @@ def _get_full_history_all(session_id: str) -> List[dict]:
     feedback_by_turn = dict(feedback_rows)
 
     messages: List[dict] = []
-    for question, answer, created_at in turn_rows:
+    for question, answer, created_at, sources_json, suggestions_json, dependencia_id in turn_rows:
         messages.append({"sender": "student", "message": question, "created_at": created_at, "message_type": "text"})
         assistant_message = {"sender": "assistant", "message": answer, "created_at": created_at, "message_type": "text"}
         if created_at in feedback_by_turn:
             assistant_message["feedback_rating"] = feedback_by_turn[created_at]
+        if sources_json:
+            assistant_message["sources"] = json.loads(sources_json)
+        if suggestions_json:
+            assistant_message["suggestions"] = json.loads(suggestions_json)
+        if dependencia_id is not None:
+            assistant_message["dependencia_id"] = dependencia_id
         messages.append(assistant_message)
     for sender, message, created_at, message_type, sender_name in admin_rows:
         messages.append(

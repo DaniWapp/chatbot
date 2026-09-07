@@ -3,6 +3,7 @@ const emptyState = document.getElementById("empty-state");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
 const sendButton = document.getElementById("send-button");
+const dependenciaSelect = document.getElementById("dependencia-select");
 const statusBadge = document.getElementById("status-badge");
 const escalationBanner = document.getElementById("escalation-banner");
 const markSolvedButton = document.getElementById("mark-solved-button");
@@ -26,6 +27,47 @@ async function loadInstitutionBranding() {
     }
   } catch {
     // si falla, se queda con el nombre/branding por defecto del HTML.
+  }
+}
+
+function setDependenciaSelectDisabled(disabled) {
+  dependenciaSelect.disabled = disabled;
+  const chip = dependenciaSelect.closest(".dependencia-chip");
+  if (chip) chip.classList.toggle("is-disabled", disabled);
+}
+
+function dependenciaNameById(id) {
+  if (!id) return null;
+  const option = Array.from(dependenciaSelect.options).find((o) => o.value === String(id));
+  return option ? option.textContent : null;
+}
+
+// Se agrega DENTRO del message-block (no como .system-notice al final de
+// chatWindow) para que viaje junto con su respuesta tanto en un mensaje en
+// vivo como al reconstruir el historial (incluyendo "cargar mensajes
+// anteriores", que inserta bloques arriba, no al final).
+function addDependenciaFilterNotice(block, dependenciaId) {
+  const label = dependenciaNameById(dependenciaId);
+  if (!label) return;
+  const notice = document.createElement("p");
+  notice.className = "dependencia-filter-notice";
+  notice.textContent = `Tu búsqueda estaba filtrada a "${label}". Si crees que la respuesta pertenece a otra área, cambia el filtro arriba a "Todas las dependencias" e intenta de nuevo.`;
+  block.appendChild(notice);
+}
+
+async function loadDependenciaOptions() {
+  try {
+    const res = await fetch("/api/dependencias");
+    if (!res.ok) return;
+    const dependencias = await res.json();
+    for (const dep of dependencias) {
+      const option = document.createElement("option");
+      option.value = String(dep.id);
+      option.textContent = dep.name;
+      dependenciaSelect.appendChild(option);
+    }
+  } catch {
+    // si falla, el selector se queda solo con "Todas las dependencias".
   }
 }
 
@@ -123,7 +165,7 @@ function addAssistantPlaceholder() {
   return block;
 }
 
-function buildAssistantMessageEl(text, turnCreatedAt, initialRating) {
+function buildAssistantMessageEl(text, turnCreatedAt, initialRating, sources, suggestions, dependenciaId) {
   const block = document.createElement("div");
   block.className = "message-block";
   block.innerHTML = `
@@ -135,12 +177,24 @@ function buildAssistantMessageEl(text, turnCreatedAt, initialRating) {
   bubble.innerHTML = renderMarkdownHtml(text);
   addCopyButton(bubble, text);
   addFeedbackButtons(bubble, turnCreatedAt, initialRating);
+  // Reconstruye lo mismo que se vio en vivo -- fuentes citadas, o (si no
+  // hubo información suficiente) las sugerencias, el botón de escalar, y el
+  // aviso de qué dependencia estaba filtrada -- que antes de persistirse en
+  // el turno (ver history.py::append_turn) desaparecían al recargar.
+  if (text.trim() === NO_INFO_TEXT) {
+    bubble.classList.add("no-info");
+    addSuggestionOptions(block, suggestions);
+    addEscalationOption(block);
+    addDependenciaFilterNotice(block, dependenciaId);
+  } else {
+    renderSources(block, sources);
+  }
   return block;
 }
 
-function addAssistantMessage(text, turnCreatedAt, initialRating) {
+function addAssistantMessage(text, turnCreatedAt, initialRating, sources, suggestions, dependenciaId) {
   hideEmptyState();
-  chatWindow.appendChild(buildAssistantMessageEl(text, turnCreatedAt, initialRating));
+  chatWindow.appendChild(buildAssistantMessageEl(text, turnCreatedAt, initialRating, sources, suggestions, dependenciaId));
   scrollToBottom();
 }
 
@@ -396,7 +450,10 @@ function prependHistoryMessages(messages) {
   const fragment = document.createDocumentFragment();
   messages.forEach((m) => {
     if (m.sender === "student") fragment.appendChild(buildUserMessageEl(m.message));
-    else if (m.sender === "assistant") fragment.appendChild(buildAssistantMessageEl(m.message, m.created_at, m.feedback_rating));
+    else if (m.sender === "assistant")
+      fragment.appendChild(
+        buildAssistantMessageEl(m.message, m.created_at, m.feedback_rating, m.sources, m.suggestions, m.dependencia_id)
+      );
     else if (m.sender === "advisor") fragment.appendChild(buildAdvisorMessageEl(m.message, m.sender_name));
   });
   chatWindow.insertBefore(fragment, chatWindow.firstChild);
@@ -457,11 +514,13 @@ function addCheckinPrompt(text, advisorName) {
 function showEscalationBanner() {
   escalationBanner.hidden = false;
   markSolvedButton.hidden = true;
+  setDependenciaSelectDisabled(true);
 }
 
 function hideEscalationBanner() {
   escalationBanner.hidden = true;
   markSolvedButton.hidden = false;
+  setDependenciaSelectDisabled(false);
 }
 
 function connectSessionWebSocket() {
@@ -703,7 +762,7 @@ function renderHistoryMessage(m, isLast) {
   if (m.sender === "student") {
     addUserMessage(m.message);
   } else if (m.sender === "assistant") {
-    addAssistantMessage(m.message, m.created_at, m.feedback_rating);
+    addAssistantMessage(m.message, m.created_at, m.feedback_rating, m.sources, m.suggestions, m.dependencia_id);
   } else if (m.sender === "advisor" && m.message_type === "checkin") {
     if (isLast) addCheckinPrompt(m.message, m.sender_name);
     else addAdvisorMessage(m.message, m.sender_name);
@@ -811,12 +870,14 @@ async function sendMessage(text) {
 
   sendButton.disabled = true;
   messageInput.disabled = true;
+  setDependenciaSelectDisabled(true);
 
   try {
+    const dependenciaId = dependenciaSelect.value ? Number(dependenciaSelect.value) : null;
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message: text }),
+      body: JSON.stringify({ session_id: sessionId, message: text, dependencia_id: dependenciaId }),
     });
 
     if (!response.ok || !response.body) {
@@ -904,6 +965,7 @@ async function sendMessage(text) {
         bubble.classList.add("no-info");
         addSuggestionOptions(block, suggestions);
         addEscalationOption(block);
+        addDependenciaFilterNotice(block, dependenciaId);
       } else {
         renderSources(block, sources);
       }
@@ -913,6 +975,7 @@ async function sendMessage(text) {
   } finally {
     sendButton.disabled = false;
     messageInput.disabled = false;
+    setDependenciaSelectDisabled(isEscalated);
     messageInput.focus();
     scrollToBottom();
   }
@@ -986,4 +1049,9 @@ document.addEventListener("visibilitychange", () => {
 
 checkHealth();
 loadInstitutionBranding();
-loadChatHistory().then(checkSessionStatus);
+// El historial puede reconstruir un aviso de "búsqueda filtrada a X"
+// (ver addDependenciaFilterNotice) que necesita el nombre de la
+// dependencia -- se espera a que el selector esté poblado antes de
+// renderizar el historial para no perderlo por una carrera entre ambos
+// fetch.
+loadDependenciaOptions().then(() => loadChatHistory().then(checkSessionStatus));

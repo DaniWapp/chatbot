@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/style.css?v=41" />
+  <link rel="stylesheet" href="/static/style.css?v=45" />
 </head>
 <body>
   <div class="app">
@@ -45,6 +45,20 @@
 
     <button id="mark-solved-button" class="mark-solved-button" type="button" hidden>Marcar como solucionado</button>
 
+    <div class="dependencia-bar">
+      <label class="dependencia-chip" title="Filtrar la búsqueda por dependencia">
+        <svg class="dependencia-chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        <select id="dependencia-select" aria-label="Filtrar la búsqueda por dependencia">
+          <option value="">Todas las dependencias</option>
+        </select>
+        <svg class="dependencia-chip-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </label>
+    </div>
+
     <form id="chat-form" class="chat-input-bar">
       <input
         id="message-input"
@@ -65,6 +79,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown-render.js"></script>
-  <script src="/static/script.js?v=41"></script>
+  <script src="/static/script.js?v=44"></script>
 </body>
 </html>

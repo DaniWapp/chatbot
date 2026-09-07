@@ -9,7 +9,7 @@ responder de forma cálida a un saludo o usar la frase fija de "no encontré
 información" ante una pregunta real sin datos suficientes. Esto evita tener
 que mantener expresiones regulares para cada frase nueva."""
 import time
-from typing import Generator, List, Tuple
+from typing import Generator, List, Optional, Tuple
 
 from app.config import settings
 from app.models.schemas import ChatMetrics, ChatResponse, SourceCitation
@@ -54,7 +54,14 @@ def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
 ESCALATED_NOTICE = "Tu mensaje fue enviado a tu asesor. Pronto te responderá aquí mismo."
 
 
-def _save_and_broadcast_turn(session_id: str, question: str, answer: str) -> str:
+def _save_and_broadcast_turn(
+    session_id: str,
+    question: str,
+    answer: str,
+    sources: Optional[List[SourceCitation]] = None,
+    suggestions: Optional[List[str]] = None,
+    dependencia_id: Optional[int] = None,
+) -> str:
     """Persiste el turno y devuelve su created_at -- el cliente lo necesita
     para poder identificar después esta respuesta puntual al dar feedback
     (ver app/services/history.py::record_feedback, turns no expone su id
@@ -62,8 +69,19 @@ def _save_and_broadcast_turn(session_id: str, question: str, answer: str) -> str
     respondiendo (needs_human es False), la conversación no pertenece a
     ninguna dependencia todavía -- eso solo ocurre al escalar, momento en
     el que sí se avisa al administrador correspondiente (ver
-    app/api/routes.py:escalate)."""
-    return history_service.append_turn(session_id, question, answer)
+    app/api/routes.py:escalate).
+
+    sources/suggestions/dependencia_id se guardan junto al turno para poder
+    reconstruir la respuesta completa (fuentes, sugerencias, aviso de
+    filtro) al recargar el historial -- ver history.py::append_turn."""
+    return history_service.append_turn(
+        session_id,
+        question,
+        answer,
+        sources=[s.model_dump() for s in sources] if sources else None,
+        suggestions=suggestions or None,
+        dependencia_id=dependencia_id,
+    )
 
 
 def _save_and_broadcast_student_message(session_id: str, message: str) -> None:
@@ -84,9 +102,9 @@ def _save_and_broadcast_student_message(session_id: str, message: str) -> None:
     )
 
 
-def retrieve_context(question: str) -> Tuple[List[RetrievedChunk], float]:
+def retrieve_context(question: str, dependencia_id: Optional[int] = None) -> Tuple[List[RetrievedChunk], float]:
     start = time.perf_counter()
-    chunks = retrieve(question)
+    chunks = retrieve(question, dependencia_id=dependencia_id)
     retrieval_ms = (time.perf_counter() - start) * 1000
     return chunks, retrieval_ms
 
@@ -96,6 +114,7 @@ def _try_multi_query_rewrite(
     chunks: List[RetrievedChunk],
     retrieval_ms: float,
     conversation_history: List[Tuple[str, str]],
+    dependencia_id: Optional[int] = None,
 ) -> Tuple[List[RetrievedChunk], str, float]:
     """Si _needs_query_rewrite decide que hace falta, pide varias
     reformulaciones autónomas de la pregunta (multi-query retrieval:
@@ -119,7 +138,7 @@ def _try_multi_query_rewrite(
     for variation in variations:
         if variation.strip().lower() == question.strip().lower():
             continue
-        variation_chunks, _ = retrieve_context(variation)
+        variation_chunks, _ = retrieve_context(variation, dependencia_id=dependencia_id)
         for c in variation_chunks:
             if c.chunk_id not in seen_ids:
                 seen_ids.add(c.chunk_id)
@@ -143,7 +162,7 @@ def _try_multi_query_rewrite(
 _SUGGESTION_CANDIDATE_POOL = 20
 
 
-def _suggest_clarifications(question: str) -> List[str]:
+def _suggest_clarifications(question: str, dependencia_id: Optional[int] = None) -> List[str]:
     """Cuando ya se determinó que no hay información suficiente, revisa si
     hay fragmentos con relación débil (por debajo de SIMILARITY_THRESHOLD)
     para pedirle al LLM hasta 3 preguntas alternativas mejor formuladas.
@@ -163,7 +182,7 @@ def _suggest_clarifications(question: str) -> List[str]:
     decide cuáles -si alguno- están realmente relacionados."""
     weak_candidates = [
         c
-        for c in retrieve_below_threshold(question, top_k=_SUGGESTION_CANDIDATE_POOL)
+        for c in retrieve_below_threshold(question, top_k=_SUGGESTION_CANDIDATE_POOL, dependencia_id=dependencia_id)
         if c.similarity >= settings.SUGGESTION_MIN_SIMILARITY
     ]
     if not weak_candidates:
@@ -172,7 +191,10 @@ def _suggest_clarifications(question: str) -> List[str]:
 
 
 def _draft_response(
-    session_id: str, question: str, conversation_history: List[Tuple[str, str]]
+    session_id: str,
+    question: str,
+    conversation_history: List[Tuple[str, str]],
+    dependencia_id: Optional[int] = None,
 ) -> Tuple[ChatResponse, str]:
     """Núcleo compartido de recuperación + generación: arma el ChatResponse
     completo (fuentes, sugerencias si no hay información suficiente,
@@ -180,11 +202,15 @@ def _draft_response(
     sesión ni si hay que guardar el turno en el historial -- eso lo decide
     cada llamador (answer_question guarda; draft_answer_for_admin no).
     Devuelve también el texto plano de la respuesta, que answer_question
-    necesita para guardar el turno."""
+    necesita para guardar el turno.
+
+    dependencia_id: la dependencia elegida por el estudiante en el
+    selector del chat (None = buscar en todo), ver
+    app/rag/retriever.py::retrieve()."""
     total_start = time.perf_counter()
-    chunks, retrieval_ms = retrieve_context(question)
+    chunks, retrieval_ms = retrieve_context(question, dependencia_id=dependencia_id)
     chunks, retrieval_question, retrieval_ms = _try_multi_query_rewrite(
-        question, chunks, retrieval_ms, conversation_history
+        question, chunks, retrieval_ms, conversation_history, dependencia_id=dependencia_id
     )
 
     cached_answer = answer_cache_service.try_get_cached_answer(retrieval_question, chunks)
@@ -198,7 +224,7 @@ def _draft_response(
     total_ms = (time.perf_counter() - total_start) * 1000
 
     is_no_info = settings.NO_INFO_MESSAGE.strip() in answer_text
-    suggestions = _suggest_clarifications(question) if is_no_info else []
+    suggestions = _suggest_clarifications(question, dependencia_id=dependencia_id) if is_no_info else []
 
     if cached_answer is None:
         answer_cache_service.maybe_store_answer(retrieval_question, chunks, answer_text)
@@ -227,7 +253,7 @@ def _draft_response(
     return response, answer_text
 
 
-def answer_question(session_id: str, question: str) -> ChatResponse:
+def answer_question(session_id: str, question: str, dependencia_id: Optional[int] = None) -> ChatResponse:
     """Flujo completo sin streaming (usado por evaluación/tests y como fallback)."""
     if history_service.needs_human(session_id):
         _save_and_broadcast_student_message(session_id, question)
@@ -251,8 +277,15 @@ def answer_question(session_id: str, question: str) -> ChatResponse:
         return response
 
     conversation_history = history_service.get_history(session_id)
-    response, answer_text = _draft_response(session_id, question, conversation_history)
-    response.turn_created_at = _save_and_broadcast_turn(session_id, question, answer_text)
+    response, answer_text = _draft_response(session_id, question, conversation_history, dependencia_id=dependencia_id)
+    response.turn_created_at = _save_and_broadcast_turn(
+        session_id,
+        question,
+        answer_text,
+        sources=response.sources,
+        suggestions=response.suggestions,
+        dependencia_id=dependencia_id,
+    )
     return response
 
 
@@ -272,7 +305,9 @@ def draft_answer_for_admin(session_id: str, question: str) -> ChatResponse:
     return response
 
 
-def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]:
+def stream_answer(
+    session_id: str, question: str, dependencia_id: Optional[int] = None
+) -> Generator[dict, None, None]:
     """Flujo con streaming: primero recupera contexto, luego va emitiendo eventos
     (tipo 'meta' con fuentes/métricas parciales, 'delta' con texto incremental,
     'done' al final) para que el frontend pueda usar Server-Sent Events."""
@@ -299,10 +334,10 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
         }
         return
 
-    chunks, retrieval_ms = retrieve_context(question)
+    chunks, retrieval_ms = retrieve_context(question, dependencia_id=dependencia_id)
     conversation_history = history_service.get_history(session_id)
     chunks, retrieval_question, retrieval_ms = _try_multi_query_rewrite(
-        question, chunks, retrieval_ms, conversation_history
+        question, chunks, retrieval_ms, conversation_history, dependencia_id=dependencia_id
     )
 
     sources = _dedup_sources(chunks) if chunks else []
@@ -322,10 +357,17 @@ def stream_answer(session_id: str, question: str) -> Generator[dict, None, None]
             yield {"type": "delta", "text": delta}
     generation_ms = (time.perf_counter() - gen_start) * 1000
 
-    turn_created_at = _save_and_broadcast_turn(session_id, question, full_answer)
-
     is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
-    suggestions = _suggest_clarifications(question) if is_no_info else []
+    suggestions = _suggest_clarifications(question, dependencia_id=dependencia_id) if is_no_info else []
+
+    turn_created_at = _save_and_broadcast_turn(
+        session_id,
+        question,
+        full_answer,
+        sources=None if is_no_info else sources,
+        suggestions=suggestions,
+        dependencia_id=dependencia_id,
+    )
 
     if cached_answer is None:
         answer_cache_service.maybe_store_answer(retrieval_question, chunks, full_answer)

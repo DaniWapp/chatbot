@@ -40,6 +40,7 @@ from app.models.schemas import (
     DashboardResponse,
     DependenciaCreateRequest,
     DependenciaHorarioRequest,
+    DependenciaOption,
     DependenciaResponse,
     DependenciaUpdateRequest,
     DocumentInfo,
@@ -105,7 +106,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
             detail="GROQ_API_KEY no configurada en el servidor. Revisa el archivo .env.",
         )
     try:
-        return chat_service.answer_question(payload.session_id, payload.message)
+        return chat_service.answer_question(payload.session_id, payload.message, payload.dependencia_id)
     except Exception:
         logger.exception("Error generando respuesta para session_id=%s", payload.session_id)
         raise HTTPException(status_code=500, detail="Error generando la respuesta. Intenta de nuevo.")
@@ -123,7 +124,7 @@ def chat_stream(payload: ChatRequest):
 
     def event_generator():
         try:
-            for event in chat_service.stream_answer(payload.session_id, payload.message):
+            for event in chat_service.stream_answer(payload.session_id, payload.message, payload.dependencia_id):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("Error en streaming para session_id=%s", payload.session_id)
@@ -141,6 +142,14 @@ def get_institution_route() -> InstitutionResponse:
     data = admin_service.get_institution()
     logo_url = f"/static/branding/{data['logo_filename']}" if data["logo_filename"] else None
     return InstitutionResponse(name=data["name"], extra_info=data["extra_info"], logo_url=logo_url)
+
+
+@router.get("/dependencias", response_model=List[DependenciaOption])
+def list_dependencia_options_route() -> List[DependenciaOption]:
+    """Lista pública (sin autenticación) para poblar el selector de
+    dependencia en el chat del estudiante -- solo id y nombre, sin datos
+    administrativos (horario, descripción) que sí expone DependenciaResponse."""
+    return [DependenciaOption(id=d["id"], name=d["name"]) for d in admin_service.list_dependencias()]
 
 
 @router.get("/session-status/{session_id}", response_model=SessionStatus)
