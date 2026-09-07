@@ -788,6 +788,13 @@ function extractErrorMessage(err) {
 }
 
 async function sendMessage(text) {
+  // Ya hay una pregunta en curso (el botón queda deshabilitado mientras
+  // se espera la respuesta, ver más abajo) -- ignora este llamado en vez
+  // de enviar una segunda pregunta antes de que la primera termine.
+  // Protege tanto el envío por el formulario como el clic en un chip de
+  // sugerencia, que llama a esta misma función directamente.
+  if (sendButton.disabled) return;
+
   hideEmptyState();
   if (!isEscalated) markSolvedButton.hidden = false;
   addUserMessage(text);
@@ -797,6 +804,7 @@ async function sendMessage(text) {
   const placeholderShownAt = performance.now();
 
   sendButton.disabled = true;
+  messageInput.disabled = true;
 
   try {
     const response = await fetch("/api/chat/stream", {
@@ -808,7 +816,6 @@ async function sendMessage(text) {
     if (!response.ok || !response.body) {
       const err = await response.json().catch(() => ({}));
       bubble.textContent = extractErrorMessage(err);
-      sendButton.disabled = false;
       return;
     }
 
@@ -899,6 +906,8 @@ async function sendMessage(text) {
     bubble.textContent = "No se pudo conectar con el servidor. Verifica que el backend esté activo.";
   } finally {
     sendButton.disabled = false;
+    messageInput.disabled = false;
+    messageInput.focus();
     scrollToBottom();
   }
 }
