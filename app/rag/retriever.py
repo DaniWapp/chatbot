@@ -62,27 +62,37 @@ def drop_superseded_by_vigencia(question: str, chunks: List[RetrievedChunk]) -> 
 def retrieve(question: str, top_k: int = None) -> List[RetrievedChunk]:
     """Recupera los fragmentos más relevantes para una pregunta.
 
-    Primero filtra por SIMILARITY_THRESHOLD (embeddings, barato) sobre un
-    lote más amplio de candidatos (RERANK_CANDIDATE_K), y si RERANK_ENABLED
-    los reordena/filtra por relevancia real con un cross-encoder local
-    (ver app/rag/reranker.py) -- la similitud de embeddings por sí sola
-    puede coincidir con fragmentos de un tema distinto que comparten
-    vocabulario. Puede devolver una lista vacía (ni el umbral de embeddings
-    ni el re-ranking encontraron algo realmente relevante): el chatbot debe
-    entonces reconocer que no tiene información suficiente, en vez de
-    alucinar.
+    Trae un lote amplio de candidatos por embeddings (RERANK_CANDIDATE_K)
+    y, si RERANK_ENABLED, se los pasa TODOS al cross-encoder local (ver
+    app/rag/reranker.py) sin pre-filtrar por SIMILARITY_THRESHOLD -- caso
+    real verificado: para "la clase de calculo diferencial", el embedding
+    de la fila "Cálculo Diferencial" queda por debajo de ese umbral
+    (0.27 vs. 0.35) y hasta detrás de una fila de "Álgebra Lineal" no
+    relacionada (el modelo de embeddings confunde estas dos frases cortas
+    de matemáticas), pero el cross-encoder sí la distingue perfectamente
+    en cuanto se le muestra -- el problema nunca fue de juicio de
+    relevancia, era que el fragmento correcto no llegaba a esa etapa.
+    Con re-ranking activo, RERANK_MIN_SCORE es entonces el único filtro
+    de relevancia real. Sin re-ranking (RERANK_ENABLED=False), no hay un
+    juez más preciso disponible, así que ahí sí se usa SIMILARITY_THRESHOLD
+    como antes. Puede devolver una lista vacía: el chatbot debe entonces
+    reconocer que no tiene información suficiente, en vez de alucinar.
     """
     top_k = top_k or settings.TOP_K
     query_embedding = embed_query(question)
     candidate_k = max(top_k, settings.RERANK_CANDIDATE_K)
     hits = vector_store.query(query_embedding, top_k=candidate_k)
-    candidates = [_to_chunk(h) for h in hits if h["similarity"] >= settings.SIMILARITY_THRESHOLD]
-    if not candidates:
-        return []
-    if not settings.RERANK_ENABLED:
-        result = candidates[:top_k]
-    else:
+
+    if settings.RERANK_ENABLED:
+        candidates = [_to_chunk(h) for h in hits]
+        if not candidates:
+            return []
         result = reranker.rerank(question, candidates, top_k=top_k, min_score=settings.RERANK_MIN_SCORE)
+    else:
+        candidates = [_to_chunk(h) for h in hits if h["similarity"] >= settings.SIMILARITY_THRESHOLD]
+        if not candidates:
+            return []
+        result = candidates[:top_k]
     return drop_superseded_by_vigencia(question, result)
 
 

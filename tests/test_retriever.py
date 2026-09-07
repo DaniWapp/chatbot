@@ -1,16 +1,12 @@
 """Pruebas del umbral de relevancia en la recuperación semántica.
 
 Se simulan (mock) el embedding de la consulta, la respuesta del vector store,
-y el re-ranking (devuelto tal cual, sin reordenar) para no depender de
-descargar el modelo de embeddings ni el cross-encoder real en cada test.
+y el re-ranking para no depender de descargar el modelo de embeddings ni el
+cross-encoder real en cada test.
 """
 from unittest.mock import patch
 
 from app.rag import retriever
-
-def _rerank_passthrough(question, chunks, top_k, min_score):
-    return chunks[:top_k]
-
 
 FAKE_HITS = [
     {
@@ -30,20 +26,44 @@ FAKE_HITS = [
 ]
 
 
-@patch("app.rag.retriever.reranker.rerank", side_effect=_rerank_passthrough)
+def _rerank_keep_only_a1(question, chunks, top_k, min_score):
+    """Simula un re-ranker real que sí filtra por relevancia -- el chunk
+    irrelevante nunca sobrevive, sin importar qué tan alta haya sido su
+    similitud de embeddings."""
+    return [c for c in chunks if c.chunk_id == "a1"][:top_k]
+
+
+@patch("app.rag.retriever.reranker.rerank", side_effect=_rerank_keep_only_a1)
 @patch("app.rag.retriever.vector_store.query", return_value=FAKE_HITS)
 @patch("app.rag.retriever.embed_query", return_value=[0.1, 0.2, 0.3])
-def test_relevant_question_keeps_only_chunks_above_threshold(mock_embed, mock_query, mock_rerank):
+def test_rerank_receives_all_candidates_without_prefiltering_by_embedding_threshold(mock_embed, mock_query, mock_rerank):
+    """Caso real que motivó este cambio: "Materia: Cálculo Diferencial"
+    tenía una similitud de embeddings (0.27) por debajo de
+    SIMILARITY_THRESHOLD (0.35) -- y hasta menor que una fila de "Álgebra
+    Lineal" no relacionada -- porque el modelo de embeddings confunde
+    estas dos frases cortas de matemáticas. El cross-encoder sí las
+    distingue perfectamente en cuanto se le muestran ambas. Por eso
+    retrieve() ya NO descarta candidatos por SIMILARITY_THRESHOLD antes
+    de re-rankear (con RERANK_ENABLED, el caso normal): le pasa TODOS los
+    candidatos al re-ranker -- aquí, incluso el de similitud 0.12, muy
+    por debajo de 0.35 -- y es el re-ranker (mockeado aquí, cross-encoder
+    real en producción) quien decide qué es realmente relevante."""
     results = retriever.retrieve("¿Cuáles son los requisitos de grado?")
+
+    received_chunks = mock_rerank.call_args[0][1]
+    assert {c.chunk_id for c in received_chunks} == {"a1", "a2"}
 
     assert len(results) == 1
     assert results[0].document == "Reglamento.pdf"
-    assert results[0].similarity >= 0.35
 
 
+@patch("app.rag.retriever.reranker.rerank", return_value=[])
 @patch("app.rag.retriever.vector_store.query", return_value=[FAKE_HITS[1]])
 @patch("app.rag.retriever.embed_query", return_value=[0.1, 0.2, 0.3])
-def test_irrelevant_question_returns_no_chunks(mock_embed, mock_query):
+def test_irrelevant_question_returns_no_chunks(mock_embed, mock_query, mock_rerank):
+    """El re-ranker (mockeado -- ver test de arriba para por qué ya no se
+    puede confiar en SIMILARITY_THRESHOLD solo) es quien decide que nada
+    es relevante; retrieve() debe respetar una lista vacía."""
     results = retriever.retrieve("¿Dónde está la cafetería?")
 
     assert results == []

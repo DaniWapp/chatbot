@@ -34,8 +34,12 @@ def get_reranker_model() -> CrossEncoder:
 def rerank(question: str, chunks: "List[RetrievedChunk]", top_k: int, min_score: float) -> "List[RetrievedChunk]":
     """Reordena chunks por relevancia real a la pregunta y descarta los
     que queden debajo de min_score -- puede devolver una lista vacía si
-    nada es realmente relevante, aunque la búsqueda por embeddings sí haya
-    encontrado algo por encima de SIMILARITY_THRESHOLD.
+    nada es realmente relevante. `chunks` llega aquí recortado solo por
+    cantidad (RERANK_CANDIDATE_K), sin filtrar antes por
+    SIMILARITY_THRESHOLD: un fragmento realmente relevante puede tener
+    una similitud de embeddings baja (caso real: "Cálculo Diferencial"
+    confundido con "Álgebra Lineal", ver retriever.py::retrieve), así
+    que aquí, no en el embedding, es donde se decide relevancia real.
 
     CrossEncoder.predict() devuelve logits crudos (no acotados a 0-1) --
     aplicamos sigmoide para obtener una confianza interpretable en ese

@@ -78,6 +78,18 @@ class Settings:
     # sistema, no este umbral. La documentación oficial de
     # sentence-transformers no recomienda un valor universal -- deja la
     # calibración al caso de uso (ver docs/conceptos-chunks-y-faiss.md).
+    #
+    # IMPORTANTE: desde que se descubrió el caso real "Cálculo Diferencial"
+    # (ver RERANK_CANDIDATE_K abajo), este umbral solo se aplica cuando
+    # RERANK_ENABLED es False. Con re-ranking activo (el caso normal),
+    # retriever.py::retrieve ya NO filtra por este valor antes de
+    # re-rankear -- el embedding de "la clase de calculo diferencial" dio
+    # 0.27 contra su propia fila (por debajo de este umbral) y hasta menos
+    # que una fila de "Álgebra Lineal" no relacionada (0.47) -- el modelo
+    # de embeddings confunde estas dos frases cortas de matemáticas. El
+    # cross-encoder sí las distingue perfectamente (0.34 vs. 0.01 de
+    # confianza) en cuanto se le muestran ambas, así que con re-ranking
+    # activo el filtro de relevancia real es RERANK_MIN_SCORE, no este.
     SIMILARITY_THRESHOLD: float = _get_float("SIMILARITY_THRESHOLD", 0.35)
     # Umbral más bajo, solo para decidir si vale la pena pedirle al LLM
     # sugerencias de reformulación cuando no hay información suficiente (ver
@@ -97,7 +109,15 @@ class Settings:
     # incluso respuestas correctas.
     RERANK_ENABLED: bool = os.getenv("RERANK_ENABLED", "true").lower() == "true"
     RERANKER_MODEL: str = os.getenv("RERANKER_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
-    RERANK_CANDIDATE_K: int = _get_int("RERANK_CANDIDATE_K", 10)
+    # Subido de 10 a 20 tras un caso real: "Materia: Cálculo Diferencial"
+    # quedaba en el puesto #11 de 50 por similitud de embeddings (el
+    # modelo la confunde con "Álgebra Lineal") -- fuera de los 10
+    # candidatos que se pedían antes, así que el cross-encoder (que sí la
+    # habría distinguido bien) nunca llegaba a verla. Duplicar el pool
+    # duplica también el tiempo de re-ranking (medido: ~770ms -> ~1565ms
+    # en caliente para una pregunta) -- 20 es el mínimo verificado que
+    # resuelve el caso real, no se sube más sin evidencia de que haga falta.
+    RERANK_CANDIDATE_K: int = _get_int("RERANK_CANDIDATE_K", 20)
     RERANK_MIN_SCORE: float = _get_float("RERANK_MIN_SCORE", 0.05)
 
     # --- Historial ---
