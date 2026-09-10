@@ -214,6 +214,14 @@ const DOWNLOAD_ICON_SVG =
   '<polyline points="7 10 12 15 17 10"></polyline>' +
   '<line x1="12" y1="15" x2="12" y2="3"></line></svg>';
 
+// El cambio de color de .downloading (ver style.css) por sí solo es poco
+// visible -- un ícono girando es una señal de "cargando" inequívoca, para
+// que una descarga de varios segundos no se sienta como que el sistema
+// se congeló.
+const SPINNER_ICON_SVG =
+  '<svg class="spinner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  '<path d="M21 12a9 9 0 1 1-9-9"></path></svg>';
+
 // Restricción del lado del cliente: mientras haya una descarga en curso (en
 // cualquier mensaje de la conversación), se deshabilitan todos los botones
 // de descarga -- el backend además rechaza con 429 si esta misma sesión
@@ -231,6 +239,7 @@ async function downloadDocument(filename, button) {
   isDownloadInProgress = true;
   setDownloadButtonsDisabled(true);
   button.classList.add("downloading");
+  button.innerHTML = SPINNER_ICON_SVG;
 
   try {
     const res = await fetch(`/api/documents/${encodeURIComponent(filename)}/download?session_id=${encodeURIComponent(sessionId)}`);
@@ -251,6 +260,7 @@ async function downloadDocument(filename, button) {
     button.title = "No se pudo descargar el archivo.";
   } finally {
     button.classList.remove("downloading");
+    button.innerHTML = DOWNLOAD_ICON_SVG;
     isDownloadInProgress = false;
     setDownloadButtonsDisabled(false);
   }
@@ -273,15 +283,23 @@ function renderSources(block, sources) {
     label.textContent = `${s.document}${page}`;
     item.appendChild(label);
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "source-download-button";
-    button.title = "Descargar archivo";
-    button.setAttribute("aria-label", `Descargar ${s.document}`);
-    button.innerHTML = DOWNLOAD_ICON_SVG;
-    button.disabled = isDownloadInProgress;
-    button.addEventListener("click", () => downloadDocument(s.document, button));
-    item.appendChild(button);
+    // downloadable llega en false cuando un admin marcó el documento como
+    // no descargable (ej. un PDF con la marca institucional desactualizada
+    // que igual sirve para responder) -- ver
+    // app/services/ingest_service.py::get_document_downloadable. Sin botón
+    // en vez de uno deshabilitado: no es un problema temporal, es una
+    // decisión permanente del admin.
+    if (s.downloadable !== false) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "source-download-button";
+      button.title = "Descargar archivo";
+      button.setAttribute("aria-label", `Descargar ${s.document}`);
+      button.innerHTML = DOWNLOAD_ICON_SVG;
+      button.disabled = isDownloadInProgress;
+      button.addEventListener("click", () => downloadDocument(s.document, button));
+      item.appendChild(button);
+    }
 
     list.appendChild(item);
   });

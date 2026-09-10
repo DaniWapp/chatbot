@@ -380,6 +380,7 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
             <td>${formatSize(doc.size_bytes)}</td>
             <td>${escapeHtml(dependenciaNameById(doc.dependencia_id))}</td>
             <td>${escapeHtml(doc.vigente_desde || "")}</td>
+            <td>${doc.downloadable ? "Sí" : "No"}</td>
             <td>
               <div class="row-actions">
                 <button type="button" class="reactivate-doc-button" data-filename="${escapeHtml(doc.filename)}">Reactivar</button>
@@ -406,6 +407,11 @@ function buildPanelDocumentsRowsHtml(isGeneral) {
           ${depCell}
           ${vigenciaCell}
           <td>
+            <label class="downloadable-toggle" title="Si se desmarca, el documento sigue indexado y respondiendo preguntas, pero el estudiante no podrá descargarlo">
+              <input type="checkbox" class="doc-downloadable-checkbox" data-filename="${escapeHtml(doc.filename)}" ${doc.downloadable ? "checked" : ""} />
+            </label>
+          </td>
+          <td>
             <div class="row-actions">
               ${recategorizeControl}
               <button type="button" class="preview-doc-button" data-filename="${escapeHtml(doc.filename)}">Vista previa</button>
@@ -430,6 +436,11 @@ function rerenderPanelDocumentsTable(isGeneral) {
   });
   tbody.querySelectorAll(".delete-doc-button").forEach((button) => {
     button.addEventListener("click", () => deletePanelDocument(button.dataset.filename));
+  });
+  tbody.querySelectorAll(".doc-downloadable-checkbox").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      setDocumentDownloadable(adminFetch, "/api/admin/documents", checkbox.dataset.filename, checkbox.checked);
+    });
   });
   if (isGeneral) {
     tbody.querySelectorAll(".doc-dependencia-select").forEach((select) => {
@@ -469,6 +480,7 @@ async function loadDocuments() {
     <th>Tamaño</th>
     ${isGeneral ? "<th>Dependencia</th>" : ""}
     ${isGeneral ? "<th>Vigente desde</th>" : ""}
+    <th>Descargable</th>
     <th></th>
   `;
 

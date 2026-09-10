@@ -130,6 +130,23 @@ function documentMatchesDependenciaFilter(doc, filterValue) {
   return doc.dependencia_id === Number(filterValue);
 }
 
+// A diferencia de recategorizar (dependencia/vigencia, solo root/general),
+// marcar un documento como descargable o no está disponible para
+// cualquier rol -- fetchFn es rootFetch o adminFetch según quién llama,
+// mismo patrón que wireSimpleListTab.
+async function setDocumentDownloadable(fetchFn, basePath, filename, downloadable) {
+  try {
+    const res = await fetchFn(`${basePath}/${encodeURIComponent(filename)}/downloadable`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ downloadable }),
+    });
+    if (!res.ok) alert(await errorDetail(res));
+  } catch {
+    // rootFetch/adminFetch ya manejan el caso de sesión inválida.
+  }
+}
+
 // --- Horario: piezas compartidas del formulario -----------------------------
 
 const HORARIO_DIA_LABELS = { 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom" };

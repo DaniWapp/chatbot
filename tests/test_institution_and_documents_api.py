@@ -1109,6 +1109,174 @@ def test_recategorize_document_updates_vigente_desde(tmp_path, monkeypatch):
     assert doc["vigente_desde"] == "2026-01-01"
 
 
+def test_document_defaults_to_downloadable(tmp_path, monkeypatch):
+    """Un documento subido sin tocar el interruptor de descarga debe seguir
+    siendo descargable -- comportamiento anterior a esta funcionalidad, no
+    debe cambiar para nadie que no la use."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("Manual.txt", b"Contenido de prueba.", "text/plain")},
+            headers=_auth(token),
+        )
+
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "Manual.txt")
+    assert doc["downloadable"] is True
+
+    res = client.get("/api/documents/Manual.txt/download?session_id=test-default-downloadable")
+    assert res.status_code == 200
+
+
+def test_root_can_set_document_downloadable(tmp_path, monkeypatch):
+    """Caso real: un PDF con la marca institucional desactualizada sigue
+    sirviendo de fuente para responder, pero un admin lo marca como no
+    descargable para que el estudiante no lo vea directamente."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    token = _login_as()
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("Afiche2020.txt", b"Contenido con marca desactualizada.", "text/plain")},
+            headers=_auth(token),
+        )
+
+    res = client.put(
+        "/api/root/documents/Afiche2020.txt/downloadable",
+        json={"downloadable": False},
+        headers=_auth(token),
+    )
+
+    assert res.status_code == 200
+    docs = client.get("/api/root/documents", headers=_auth(token)).json()
+    doc = next(d for d in docs if d["filename"] == "Afiche2020.txt")
+    assert doc["downloadable"] is False
+
+
+def test_dependencia_admin_can_set_downloadable_for_own_document(tmp_path, monkeypatch):
+    """A diferencia de recategorizar dependencia/vigencia, marcar como
+    descargable o no SÍ está dentro del alcance de un administrador de
+    dependencia -- petición explícita para documentos con marca visual
+    desactualizada."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    dep_id = admin_service.create_dependencia("Dependencia Descargable", "")
+    dep_token = _login_as(role="dependencia", dependencia_id=dep_id)
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        client.post(
+            "/api/admin/documents",
+            files={"file": ("Propio.txt", b"Contenido propio.", "text/plain")},
+            headers=_auth(dep_token),
+        )
+
+    res = client.put(
+        "/api/admin/documents/Propio.txt/downloadable",
+        json={"downloadable": False},
+        headers=_auth(dep_token),
+    )
+
+    assert res.status_code == 200
+    docs = client.get("/api/admin/documents", headers=_auth(dep_token)).json()
+    doc = next(d for d in docs if d["filename"] == "Propio.txt")
+    assert doc["downloadable"] is False
+
+
+def test_dependencia_admin_cannot_set_downloadable_for_others_document(tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    root_token = _login_as()
+    other_dep_id = admin_service.create_dependencia("Otra Dependencia", "")
+    dep_token = _login_as(role="dependencia", dependencia_id=other_dep_id)
+
+    with (
+        patch("app.services.ingest_service.embed_texts", side_effect=_fake_embed_texts),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+    ):
+        client.post(
+            "/api/root/documents",
+            files={"file": ("Ajeno.txt", b"Contenido ajeno.", "text/plain")},
+            headers=_auth(root_token),
+        )
+
+    res = client.put(
+        "/api/admin/documents/Ajeno.txt/downloadable",
+        json={"downloadable": False},
+        headers=_auth(dep_token),
+    )
+
+    assert res.status_code == 403
+
+
+def test_download_rejects_document_marked_not_downloadable(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services import ingest_service
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    (tmp_path / "NoDescargable.txt").write_text("Contenido restringido.", encoding="utf-8")
+    ingest_service.set_document_downloadable("NoDescargable.txt", False)
+
+    res = client.get("/api/documents/NoDescargable.txt/download?session_id=test-download-blocked")
+
+    assert res.status_code == 403
+
+
+def test_download_allows_document_after_marking_downloadable_again(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services import ingest_service
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    (tmp_path / "VuelveADescargar.txt").write_text("Contenido.", encoding="utf-8")
+    ingest_service.set_document_downloadable("VuelveADescargar.txt", False)
+    ingest_service.set_document_downloadable("VuelveADescargar.txt", True)
+
+    res = client.get("/api/documents/VuelveADescargar.txt/download?session_id=test-download-restored")
+
+    assert res.status_code == 200
+
+
+def test_chat_source_citation_reflects_downloadable_flag(tmp_path, monkeypatch):
+    """chat_service._dedup_sources debe consultar el flag real por
+    documento, para que el chat del estudiante sepa si ofrecer el botón de
+    descarga en esa fuente."""
+    from app.config import settings
+    from app.rag.retriever import RetrievedChunk
+    from app.services import chat_service, ingest_service
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    ingest_service.set_document_downloadable("Restringido.pdf", False)
+
+    chunks = [
+        RetrievedChunk(chunk_id="a", text="texto", document="Restringido.pdf", page=1, similarity=0.9),
+        RetrievedChunk(chunk_id="b", text="texto", document="Normal.pdf", page=1, similarity=0.8),
+    ]
+    sources = chat_service._dedup_sources(chunks)
+
+    restringido = next(s for s in sources if s.document == "Restringido.pdf")
+    normal = next(s for s in sources if s.document == "Normal.pdf")
+    assert restringido.downloadable is False
+    assert normal.downloadable is True
+
+
 def test_documents_list_is_sorted_newest_first(tmp_path, monkeypatch):
     import time
     from app.config import settings

@@ -918,6 +918,7 @@ function renderDocumentsTable() {
         <td>${formatSize(doc.size_bytes)}</td>
         <td>${escapeHtml(dependenciaLabelFor(doc.dependencia_id))}</td>
         <td>${escapeHtml(doc.vigente_desde || "")}</td>
+        <td>${doc.downloadable ? "Sí" : "No"}</td>
         <td>
           <div class="row-actions">
             <button type="button" class="reactivate-button">Reactivar</button>
@@ -935,6 +936,11 @@ function renderDocumentsTable() {
       <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id, dependencias)}</select></td>
       <td><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
       <td>
+        <label class="downloadable-toggle" title="Si se desmarca, el documento sigue indexado y respondiendo preguntas, pero el estudiante no podrá descargarlo">
+          <input type="checkbox" class="doc-downloadable-checkbox" ${doc.downloadable ? "checked" : ""} />
+        </label>
+      </td>
+      <td>
         <div class="row-actions">
           <button type="button" class="preview-button">Vista previa</button>
           <button type="button" class="archive-button">Archivar</button>
@@ -950,6 +956,9 @@ function renderDocumentsTable() {
     const vigenciaInput = tr.querySelector(".doc-vigencia-input");
     vigenciaInput.addEventListener("change", () => {
       recategorizeDocument(doc, { vigenteDesde: vigenciaInput.value || null });
+    });
+    tr.querySelector(".doc-downloadable-checkbox").addEventListener("change", (e) => {
+      setDocumentDownloadable(rootFetch, "/api/root/documents", doc.filename, e.target.checked);
     });
     tr.querySelector(".preview-button").addEventListener("click", () => previewDocument(doc.filename, "/api/root/documents"));
     tr.querySelector(".archive-button").addEventListener("click", () => archiveDocument(doc));

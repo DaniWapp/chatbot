@@ -749,6 +749,16 @@ body {
 
 .source-download-button.downloading {
   color: var(--accent);
+  cursor: wait;
+}
+
+.spinner-icon {
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .typing-indicator-row {

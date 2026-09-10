@@ -257,6 +257,14 @@ def _get_connection() -> sqlite3.Connection:
         # criterio institucional puede decidir que ya no le sirve a nadie.
         _ensure_column(_connection, "document_dependencias", "archived_at", "TEXT")
 
+        # 1 (por defecto) = el estudiante puede descargar el archivo original
+        # desde "Archivos consultados". 0 = el documento sigue indexado y
+        # respondiendo preguntas normalmente, pero no se ofrece para
+        # descarga -- caso real: PDFs con una imagen/marca institucional
+        # desactualizada, que un admin quiere seguir usando como fuente de
+        # información sin que el estudiante lo descargue y vea esa imagen.
+        _ensure_column(_connection, "document_dependencias", "downloadable", "INTEGER NOT NULL DEFAULT 1")
+
         # SHA-256 del contenido crudo tal como se subió (antes de cualquier
         # conversión) -- detecta el mismo archivo/imagen subido más de una
         # vez, sin importar con qué nombre, para no duplicar contenido en

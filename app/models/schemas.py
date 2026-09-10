@@ -34,6 +34,7 @@ class SourceCitation(BaseModel):
     page: Optional[int] = None
     chunk_id: str
     similarity: float
+    downloadable: bool = True
 
 
 class ChatMetrics(BaseModel):
@@ -295,11 +296,16 @@ class DocumentInfo(BaseModel):
     dependencia_id: Optional[int] = None
     vigente_desde: Optional[str] = None
     archived_at: Optional[str] = None
+    downloadable: bool = True
 
 
 class DocumentRecategorizeRequest(BaseModel):
     dependencia_id: Optional[int] = None
     vigente_desde: Optional[str] = None
+
+
+class DocumentDownloadableRequest(BaseModel):
+    downloadable: bool
 
 
 class DocumentPreviewResponse(BaseModel):

@@ -43,6 +43,7 @@ from app.models.schemas import (
     DependenciaOption,
     DependenciaResponse,
     DependenciaUpdateRequest,
+    DocumentDownloadableRequest,
     DocumentInfo,
     DocumentPreviewResponse,
     DocumentRecategorizeRequest,
@@ -223,6 +224,9 @@ def download_document(filename: str, session_id: str = Query(...)) -> FileRespon
     path = settings.DOCUMENTS_DIR / safe_name
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="No existe ese documento.")
+
+    if not ingest_service.get_document_downloadable(safe_name):
+        raise HTTPException(status_code=403, detail="Este documento no está disponible para descarga.")
 
     if not _try_acquire_download(session_id):
         raise HTTPException(
@@ -1056,6 +1060,7 @@ def _list_documents() -> List[DocumentInfo]:
             dependencia_id=ingest_service.get_document_dependencia(path.name),
             vigente_desde=ingest_service.get_document_vigencia(path.name),
             archived_at=ingest_service.get_document_archived_at(path.name),
+            downloadable=ingest_service.get_document_downloadable(path.name),
         )
         for path in paths
     ]
@@ -1310,6 +1315,20 @@ def _recategorize_document(
     return _ingest_result_to_response(result)
 
 
+def _set_document_downloadable(filename: str, downloadable: bool) -> dict:
+    """A diferencia de recategorizar (dependencia/vigencia), esto NO
+    reingesta -- el flag se consulta en vivo desde la base de datos tanto
+    al descargar (download_document) como al armar las fuentes citadas en
+    el chat (chat_service._dedup_sources), nunca se guarda en los chunks
+    del índice, así que cambiarlo no requiere reprocesar el documento."""
+    safe_name = Path(filename).name
+    path = settings.DOCUMENTS_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No existe ese documento.")
+    ingest_service.set_document_downloadable(safe_name, downloadable)
+    return {"status": "ok", "downloadable": downloadable}
+
+
 def _delete_document(filename: str) -> None:
     safe_name = Path(filename).name
     path = settings.DOCUMENTS_DIR / safe_name
@@ -1413,6 +1432,11 @@ def recategorize_document_route(filename: str, payload: DocumentRecategorizeRequ
     return _recategorize_document(filename, payload.dependencia_id, payload.vigente_desde)
 
 
+@router.put("/root/documents/{filename}/downloadable", dependencies=[Depends(require_root)])
+def set_document_downloadable_route(filename: str, payload: DocumentDownloadableRequest) -> dict:
+    return _set_document_downloadable(filename, payload.downloadable)
+
+
 @router.delete("/root/documents/{filename}", response_model=IngestResponse, dependencies=[Depends(require_root)])
 def delete_document_route(filename: str) -> IngestResponse:
     _delete_document(filename)
@@ -1491,6 +1515,24 @@ def recategorize_document_for_panel(
     if identity.role != "general":
         raise HTTPException(status_code=403, detail="Solo el administrador general puede recategorizar documentos.")
     return _recategorize_document(filename, payload.dependencia_id, payload.vigente_desde)
+
+
+@router.put("/admin/documents/{filename}/downloadable", dependencies=[Depends(require_conversation_admin)])
+def set_document_downloadable_for_panel(
+    filename: str, payload: DocumentDownloadableRequest, identity: AdminIdentity = Depends(require_conversation_admin)
+) -> dict:
+    """A diferencia de recategorizar (dependencia/vigencia), marcar un
+    documento como descargable o no SÍ está dentro del alcance de un
+    administrador de dependencia -- puede decidirlo para los documentos
+    de su propia dependencia; el general puede para cualquiera, igual que
+    root (petición explícita: hay documentos con imágenes/marca
+    institucional desactualizada que un admin quiere seguir usando como
+    fuente sin que el estudiante los descargue)."""
+    if identity.role == "dependencia":
+        safe_name = Path(filename).name
+        if ingest_service.get_document_dependencia(safe_name) != identity.dependencia_id:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este documento.")
+    return _set_document_downloadable(filename, payload.downloadable)
 
 
 @router.put("/admin/documents/{filename}/archive", dependencies=[Depends(require_conversation_admin)])

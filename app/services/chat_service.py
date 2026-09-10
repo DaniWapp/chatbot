@@ -24,6 +24,7 @@ from app.rag.retriever import (
 from app.services import answer_cache_service
 from app.services import history as history_service
 from app.services import hostility_service
+from app.services import ingest_service
 from app.services import ws_manager
 
 
@@ -89,11 +90,18 @@ def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
     """Colapsa varios chunks de la misma página/documento en una sola cita,
     conservando la similitud más alta encontrada."""
     best: dict = {}
+    downloadable_by_document: dict = {}
     for c in chunks:
         key = (c.document, c.page)
         if key not in best or c.similarity > best[key].similarity:
+            if c.document not in downloadable_by_document:
+                downloadable_by_document[c.document] = ingest_service.get_document_downloadable(c.document)
             best[key] = SourceCitation(
-                document=c.document, page=c.page, chunk_id=c.chunk_id, similarity=round(c.similarity, 4)
+                document=c.document,
+                page=c.page,
+                chunk_id=c.chunk_id,
+                similarity=round(c.similarity, 4),
+                downloadable=downloadable_by_document[c.document],
             )
     return sorted(best.values(), key=lambda s: s.similarity, reverse=True)
 

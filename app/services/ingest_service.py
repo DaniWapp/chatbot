@@ -97,6 +97,34 @@ def set_document_vigencia(filename: str, vigente_desde: Optional[str]) -> None:
         conn.commit()
 
 
+def get_document_downloadable(filename: str) -> bool:
+    """True (por defecto, incluso si el documento nunca pasó por
+    set_document_downloadable) -- un documento es descargable salvo que un
+    admin lo haya marcado explícitamente como no descargable."""
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT downloadable FROM document_dependencias WHERE filename = ?", (filename,)
+        ).fetchone()
+    return bool(row[0]) if row else True
+
+
+def set_document_downloadable(filename: str, downloadable: bool) -> None:
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            """
+            INSERT INTO document_dependencias (filename, downloadable, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(filename) DO UPDATE SET
+                downloadable = excluded.downloadable,
+                updated_at = excluded.updated_at
+            """,
+            (filename, int(downloadable), _now()),
+        )
+        conn.commit()
+
+
 def get_document_archived_at(filename: str) -> Optional[str]:
     with history.db_lock():
         conn = history.get_connection()

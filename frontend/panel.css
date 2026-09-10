@@ -1223,6 +1223,17 @@ body {
   vertical-align: middle;
 }
 
+.downloadable-toggle {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.downloadable-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .data-table tr:last-child td {
   border-bottom: none;
 }
