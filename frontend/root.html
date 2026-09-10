@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/root.css?v=20" />
+  <link rel="stylesheet" href="/static/root.css?v=23" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -39,16 +39,18 @@
       </div>
     </header>
 
-    <nav class="root-tabs">
-      <button class="root-tab active" data-tab="dashboard" type="button">Dashboard</button>
-      <button class="root-tab" data-tab="institucion" type="button">Institución</button>
-      <button class="root-tab" data-tab="dependencias" type="button">Dependencias</button>
-      <button class="root-tab" data-tab="administradores" type="button">Administradores</button>
-      <button class="root-tab" data-tab="documentos" type="button">Documentos</button>
-      <button class="root-tab" data-tab="faq" type="button">Preguntas frecuentes</button>
-      <button class="root-tab" data-tab="moderacion" type="button">Moderación</button>
-      <button class="root-tab" data-tab="widget" type="button">Widget</button>
-    </nav>
+    <div class="root-tabs-wrap">
+      <nav class="root-tabs">
+        <button class="root-tab active" data-tab="dashboard" type="button">Dashboard</button>
+        <button class="root-tab" data-tab="institucion" type="button">Institución</button>
+        <button class="root-tab" data-tab="dependencias" type="button">Dependencias</button>
+        <button class="root-tab" data-tab="administradores" type="button">Administradores</button>
+        <button class="root-tab" data-tab="documentos" type="button">Documentos</button>
+        <button class="root-tab" data-tab="faq" type="button">Preguntas frecuentes</button>
+        <button class="root-tab" data-tab="moderacion" type="button">Moderación</button>
+        <button class="root-tab" data-tab="widget" type="button">Widget</button>
+      </nav>
+    </div>
 
     <main class="root-content">
       <section id="tab-dashboard" class="root-tab-panel">
@@ -149,7 +151,7 @@
           placeholder="Buscar documento por nombre..."
         />
         <div id="documents-dependencia-chips" class="filter-chips"></div>
-        <table class="data-table">
+        <table class="data-table documents-table">
           <thead>
             <tr>
               <th>Archivo</th>
@@ -247,6 +249,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="/static/admin-shared.js?v=2"></script>
-  <script src="/static/root.js?v=27"></script>
+  <script src="/static/root.js?v=29"></script>
 </body>
 </html>

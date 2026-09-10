@@ -211,6 +211,42 @@ body {
   height: 18px;
 }
 
+.root-tabs-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.root-tabs-wrap::before,
+.root-tabs-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  width: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.root-tabs-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+
+.root-tabs-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+
+.root-tabs-wrap.can-scroll-left::before {
+  opacity: 1;
+}
+
+.root-tabs-wrap.can-scroll-right::after {
+  opacity: 1;
+}
+
 .root-tabs {
   display: flex;
   gap: 4px;
@@ -1068,5 +1104,106 @@ body {
     white-space: nowrap;
     padding: 12px 12px;
     font-size: 12.5px;
+  }
+
+  .panel-section-header {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .panel-section-header .header-actions {
+    flex: 1 1 100%;
+  }
+
+  .panel-section-header .header-actions button {
+    flex: 1;
+  }
+
+  .search-input {
+    max-width: 100%;
+  }
+
+  .filter-chips {
+    gap: 6px;
+    margin: 10px 0 2px;
+  }
+
+  .filter-chip {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+
+  /* Documentos: tarjetas apiladas en vez de tabla con scroll horizontal --
+     6 columnas no caben nunca en una pantalla angosta. */
+  .data-table.documents-table {
+    display: block;
+    overflow-x: visible;
+  }
+
+  .documents-table thead {
+    display: none;
+  }
+
+  .documents-table tbody,
+  .documents-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .documents-table tr {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .documents-table tr:last-child {
+    border-bottom: none;
+  }
+
+  .documents-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: none;
+    font-size: 13px;
+  }
+
+  .documents-table td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+  }
+
+  .documents-table td[data-label=""]::before {
+    content: none;
+  }
+
+  .documents-table td:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .documents-table td:last-child {
+    padding-top: 8px;
+  }
+
+  .documents-table .row-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .documents-table select,
+  .documents-table input[type="date"] {
+    max-width: 60%;
   }
 }

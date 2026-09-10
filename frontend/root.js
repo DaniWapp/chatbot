@@ -130,6 +130,22 @@ document.querySelectorAll(".root-tab").forEach((tab) => {
   });
 });
 
+const rootTabsWrapEl = document.querySelector(".root-tabs-wrap");
+const rootTabsEl = document.querySelector(".root-tabs");
+
+function updateTabsScrollHint() {
+  if (!rootTabsWrapEl || !rootTabsEl) return;
+  const maxScroll = rootTabsEl.scrollWidth - rootTabsEl.clientWidth;
+  rootTabsWrapEl.classList.toggle("can-scroll-left", rootTabsEl.scrollLeft > 4);
+  rootTabsWrapEl.classList.toggle("can-scroll-right", rootTabsEl.scrollLeft < maxScroll - 4);
+}
+
+if (rootTabsEl) {
+  rootTabsEl.addEventListener("scroll", updateTabsScrollHint, { passive: true });
+  window.addEventListener("resize", updateTabsScrollHint);
+  updateTabsScrollHint();
+}
+
 // --- Dependencias --------------------------------------------------------
 
 async function loadDependencias() {
@@ -917,12 +933,12 @@ function renderDocumentsTable() {
       : escapeHtml(doc.filename);
     if (doc.archived_at) {
       tr.innerHTML = `
-        <td>${nameCell} <span class="archived-badge">Archivado</span></td>
-        <td>${formatSize(doc.size_bytes)}</td>
-        <td>${escapeHtml(dependenciaLabelFor(doc.dependencia_id))}</td>
-        <td>${escapeHtml(doc.vigente_desde || "")}</td>
-        <td>${doc.downloadable ? "Sí" : "No"}</td>
-        <td>
+        <td data-label="Archivo">${nameCell} <span class="archived-badge">Archivado</span></td>
+        <td data-label="Tamaño">${formatSize(doc.size_bytes)}</td>
+        <td data-label="Dependencia">${escapeHtml(dependenciaLabelFor(doc.dependencia_id))}</td>
+        <td data-label="Vigente desde">${escapeHtml(doc.vigente_desde || "")}</td>
+        <td data-label="Descargable">${doc.downloadable ? "Sí" : "No"}</td>
+        <td data-label="">
           <div class="row-actions">
             <button type="button" class="reactivate-button">Reactivar</button>
           </div>
@@ -934,16 +950,16 @@ function renderDocumentsTable() {
     }
 
     tr.innerHTML = `
-      <td>${nameCell}</td>
-      <td>${formatSize(doc.size_bytes)}</td>
-      <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id, dependencias)}</select></td>
-      <td><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
-      <td>
+      <td data-label="Archivo">${nameCell}</td>
+      <td data-label="Tamaño">${formatSize(doc.size_bytes)}</td>
+      <td data-label="Dependencia"><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id, dependencias)}</select></td>
+      <td data-label="Vigente desde"><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
+      <td data-label="Descargable">
         <label class="downloadable-toggle" title="Si se desmarca, el documento sigue indexado y respondiendo preguntas, pero el estudiante no podrá descargarlo">
           <input type="checkbox" class="doc-downloadable-checkbox" ${doc.downloadable ? "checked" : ""} />
         </label>
       </td>
-      <td>
+      <td data-label="">
         <div class="row-actions">
           <button type="button" class="preview-button">Vista previa</button>
           <button type="button" class="archive-button">Archivar</button>
