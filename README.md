@@ -254,7 +254,7 @@ contraseña por consola.
 La documentación interactiva de la API (Swagger) está disponible en:
 http://localhost:8000/docs
 
-> ¿Vas a desplegar esto en un servidor Linux (VPS)? Ver
+> ¿Vas a desplegar esto en un servidor Linux (VPS o físico)? Ver
 > [docs/instalacion-linux.md](docs/instalacion-linux.md) -- guía paso a
 > paso por SSH, con systemd, nginx y HTTPS.
 

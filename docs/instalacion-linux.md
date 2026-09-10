@@ -1,4 +1,4 @@
-# Instalación en un servidor Linux (VPS), paso a paso por SSH
+# Instalación en un servidor Linux (VPS o físico), paso a paso por SSH
 
 El [README.md](../README.md) (sección 6) explica cómo instalar el
 proyecto en Windows para desarrollo local. Esta guía es el equivalente
@@ -22,6 +22,39 @@ descarga con `git clone` directamente en el servidor.
   directamente (sin HTTPS) mientras tanto.
 - Una clave de API de Groq gratuita (se explica cómo sacarla en el
   [README.md, sección 6.2](../README.md)).
+
+### ¿Servidor físico en vez de VPS?
+
+Esta guía sirve igual si en vez de un VPS alquilado vas a usar una
+máquina física propia. **A partir del paso 2, todo es idéntico** --
+acceso SSH, `apt`, entorno virtual, `.env`, systemd, nginx, certbot y
+`ufw` son administración estándar de Linux, sin importar si corren sobre
+una VM de un proveedor o sobre hardware propio. Las únicas diferencias
+reales, que un VPS resuelve solo y un servidor físico no:
+
+1. **Instalar el sistema operativo.** Un VPS ya viene con Ubuntu puesto;
+   en una máquina física tienes que instalarlo tú: descarga el instalador
+   de Ubuntu Server 24.04 LTS desde
+   [ubuntu.com/download/server](https://ubuntu.com/download/server),
+   grábalo en un USB de arranque, e instala normalmente (particionado de
+   disco, usuario inicial, y **marca la opción de instalar el servidor
+   OpenSSH** durante el instalador -- así el paso 2 de esta guía funciona
+   sin necesitar teclado/monitor conectados después).
+2. **Alcance de red.** Un VPS ya tiene una IP pública propia. Un
+   servidor físico normalmente vive detrás de un router doméstico o de
+   oficina, con una IP privada -- para que un dominio y HTTPS (pasos 13 y
+   14) funcionen desde internet necesitas: una IP pública (fija, o
+   dinámica con un servicio de DNS dinámico) y redirigir los puertos
+   (*port forwarding*) 80 y 443 del router hacia la IP local del
+   servidor. Si el chatbot solo se va a usar dentro de la red de la
+   institución (no desde afuera), puedes omitir el dominio y el paso 14
+   por completo, y acceder directo por la IP local (`http://192.168.x.x`).
+3. **Continuidad eléctrica.** Un corte de luz apaga la máquina física por
+   completo (algo que no le pasa a un VPS). Si el servidor tiene la
+   opción `Restart=on-failure` del paso 12 y arranca el servicio
+   automáticamente al encender (systemd ya lo hace por defecto), lo único
+   que falta del lado físico es considerar una UPS (batería de respaldo)
+   si la disponibilidad del chatbot es crítica.
 
 ## 1. Elegir el servidor: qué distribución instalar
 

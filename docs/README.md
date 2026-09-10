@@ -9,10 +9,10 @@ detallados, y guías para usuarios concretos.
 ## Instalación y despliegue
 
 - **[instalacion-linux.md](instalacion-linux.md)** -- guía extremadamente
-  detallada para instalar el proyecto en un servidor Linux (VPS) desde
-  cero, por SSH: qué distribución usar, systemd, nginx y HTTPS. El
-  equivalente Linux de la sección 6 del [README.md](../README.md)
-  (Windows).
+  detallada para instalar el proyecto en un servidor Linux (VPS o
+  físico) desde cero, por SSH: qué distribución usar, systemd, nginx y
+  HTTPS. El equivalente Linux de la sección 6 del
+  [README.md](../README.md) (Windows).
 
 ## Para usar el sistema
 
