@@ -15,3 +15,5 @@ bcrypt==4.2.1
 python-multipart==0.0.20
 tzdata
 rank_bm25
+trafilatura==2.2.0
+beautifulsoup4==4.15.0

@@ -90,18 +90,23 @@ def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
     """Colapsa varios chunks de la misma página/documento en una sola cita,
     conservando la similitud más alta encontrada."""
     best: dict = {}
-    downloadable_by_document: dict = {}
+    doc_meta: dict = {}
     for c in chunks:
         key = (c.document, c.page)
         if key not in best or c.similarity > best[key].similarity:
-            if c.document not in downloadable_by_document:
-                downloadable_by_document[c.document] = ingest_service.get_document_downloadable(c.document)
+            if c.document not in doc_meta:
+                doc_meta[c.document] = (
+                    ingest_service.get_document_downloadable(c.document),
+                    ingest_service.get_document_source_url(c.document),
+                )
+            downloadable, source_url = doc_meta[c.document]
             best[key] = SourceCitation(
                 document=c.document,
                 page=c.page,
                 chunk_id=c.chunk_id,
                 similarity=round(c.similarity, 4),
-                downloadable=downloadable_by_document[c.document],
+                downloadable=downloadable,
+                source_url=source_url,
             )
     return sorted(best.values(), key=lambda s: s.similarity, reverse=True)
 

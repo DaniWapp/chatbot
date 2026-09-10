@@ -37,6 +37,8 @@ from app.models.schemas import (
     ChatRequest,
     ChatResponse,
     CheckinResponseRequest,
+    CrawlJobStatus,
+    CrawlSiteRequest,
     DashboardResponse,
     DependenciaCreateRequest,
     DependenciaHorarioRequest,
@@ -72,6 +74,7 @@ from app.rag.document_loader import DocumentLoadError, load_document
 from app.rag.embeddings import embed_query
 from app.services import admin_service
 from app.services import chat_service
+from app.services import crawl_job_service
 from app.services import dashboard_service
 from app.services import faq_service
 from app.services import history as history_service
@@ -1061,6 +1064,7 @@ def _list_documents() -> List[DocumentInfo]:
             vigente_desde=ingest_service.get_document_vigencia(path.name),
             archived_at=ingest_service.get_document_archived_at(path.name),
             downloadable=ingest_service.get_document_downloadable(path.name),
+            source_url=ingest_service.get_document_source_url(path.name),
         )
         for path in paths
     ]
@@ -1461,6 +1465,42 @@ def reactivate_document_route(filename: str) -> IngestResponse:
 )
 def preview_document_route(filename: str) -> DocumentPreviewResponse:
     return _preview_document(filename)
+
+
+# --- Root: rastreo de sitios web (app/services/crawl_job_service.py) ------
+
+
+@router.post("/root/crawl-site", dependencies=[Depends(require_root)])
+def start_crawl_site_route(payload: CrawlSiteRequest) -> dict:
+    """Indexa automáticamente una URL y las páginas que enlaza dentro del
+    mismo dominio/ruta -- corre en segundo plano (puede tomar minutos en
+    un sitio real), ver /root/crawl-site/{job_id} para el progreso.
+    Root-only: es una operación más pesada que subir un documento suelto,
+    mismo criterio que recategorizar/archivar."""
+    job_id = crawl_job_service.start_crawl_job(
+        payload.seed_url,
+        payload.allowed_path_prefix,
+        payload.max_depth,
+        payload.max_pages,
+        payload.dependencia_id,
+    )
+    return {"job_id": job_id}
+
+
+@router.get("/root/crawl-site/{job_id}", response_model=CrawlJobStatus, dependencies=[Depends(require_root)])
+def get_crawl_site_status_route(job_id: str) -> CrawlJobStatus:
+    status = crawl_job_service.get_job_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="No existe ese rastreo (o el servidor se reinició).")
+    return CrawlJobStatus(**status)
+
+
+@router.post("/root/crawl-site/{job_id}/cancel", dependencies=[Depends(require_root)])
+def cancel_crawl_site_route(job_id: str) -> dict:
+    cancelled = crawl_job_service.cancel_job(job_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Ese rastreo no existe o ya terminó.")
+    return {"status": "ok"}
 
 
 # --- Documentos desde /panel: general (paridad con root) y dependencia (solo lo suyo) ---

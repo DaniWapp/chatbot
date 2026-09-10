@@ -35,6 +35,7 @@ class SourceCitation(BaseModel):
     chunk_id: str
     similarity: float
     downloadable: bool = True
+    source_url: Optional[str] = None
 
 
 class ChatMetrics(BaseModel):
@@ -297,6 +298,7 @@ class DocumentInfo(BaseModel):
     vigente_desde: Optional[str] = None
     archived_at: Optional[str] = None
     downloadable: bool = True
+    source_url: Optional[str] = None
 
 
 class DocumentRecategorizeRequest(BaseModel):
@@ -306,6 +308,35 @@ class DocumentRecategorizeRequest(BaseModel):
 
 class DocumentDownloadableRequest(BaseModel):
     downloadable: bool
+
+
+class CrawlSiteRequest(BaseModel):
+    seed_url: str = Field(..., min_length=1, max_length=2000)
+    # None = se restringe sola a la carpeta de seed_url (ver
+    # app/rag/web_crawler.py::default_path_prefix) -- evita que el rastreo
+    # se salga a todo el dominio si el admin no piensa en darle una ruta.
+    allowed_path_prefix: Optional[str] = None
+    max_depth: int = Field(2, ge=0, le=5)
+    max_pages: int = Field(50, ge=1, le=500)
+    dependencia_id: Optional[int] = None
+
+    @field_validator("seed_url")
+    @classmethod
+    def _seed_url_must_be_http(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("seed_url debe empezar con http:// o https://")
+        return value
+
+
+class CrawlJobStatus(BaseModel):
+    job_id: str
+    seed_url: str
+    status: str
+    pages_indexed: int
+    pages_failed: int
+    current_url: str
+    skipped_binary_urls: List[str]
+    errors: List[str]
 
 
 class DocumentPreviewResponse(BaseModel):

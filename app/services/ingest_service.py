@@ -125,6 +125,33 @@ def set_document_downloadable(filename: str, downloadable: bool) -> None:
         conn.commit()
 
 
+def get_document_source_url(filename: str) -> Optional[str]:
+    """None = documento subido a mano. Con valor = de qué URL vino esta
+    página, indexada por app/services/crawl_job_service.py."""
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT source_url FROM document_dependencias WHERE filename = ?", (filename,)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def set_document_source_url(filename: str, source_url: Optional[str]) -> None:
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            """
+            INSERT INTO document_dependencias (filename, source_url, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(filename) DO UPDATE SET
+                source_url = excluded.source_url,
+                updated_at = excluded.updated_at
+            """,
+            (filename, source_url, _now()),
+        )
+        conn.commit()
+
+
 def get_document_archived_at(filename: str) -> Optional[str]:
     with history.db_lock():
         conn = history.get_connection()

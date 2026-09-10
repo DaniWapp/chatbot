@@ -912,9 +912,12 @@ function renderDocumentsTable() {
 
   for (const doc of filteredDocuments) {
     const tr = document.createElement("tr");
+    const nameCell = doc.source_url
+      ? `${escapeHtml(doc.filename)} <a href="${escapeHtml(doc.source_url)}" target="_blank" rel="noopener" title="Página original: ${escapeHtml(doc.source_url)}">🔗</a>`
+      : escapeHtml(doc.filename);
     if (doc.archived_at) {
       tr.innerHTML = `
-        <td>${escapeHtml(doc.filename)} <span class="archived-badge">Archivado</span></td>
+        <td>${nameCell} <span class="archived-badge">Archivado</span></td>
         <td>${formatSize(doc.size_bytes)}</td>
         <td>${escapeHtml(dependenciaLabelFor(doc.dependencia_id))}</td>
         <td>${escapeHtml(doc.vigente_desde || "")}</td>
@@ -931,7 +934,7 @@ function renderDocumentsTable() {
     }
 
     tr.innerHTML = `
-      <td>${escapeHtml(doc.filename)}</td>
+      <td>${nameCell}</td>
       <td>${formatSize(doc.size_bytes)}</td>
       <td><select class="doc-dependencia-select">${documentDependenciaOptionsHtml(doc.dependencia_id, dependencias)}</select></td>
       <td><input type="date" class="doc-vigencia-input" value="${doc.vigente_desde || ""}" title="Fecha desde la cual este documento aplica -- puede ser futura" /></td>
@@ -1189,6 +1192,150 @@ document.getElementById("new-document-button").addEventListener("click", () => {
       errorEl.hidden = false;
       submitButton.disabled = false;
       submitButton.textContent = isImage ? "Guardar documento" : "Subir";
+    }
+  });
+});
+
+// --- Indexar sitio web (app/services/crawl_job_service.py) --------------
+
+const CRAWL_STATUS_LABELS = {
+  running: "Rastreando...",
+  done: "Terminado",
+  cancelled: "Cancelado",
+  error: "Error",
+};
+
+function crawlProgressHtml(status) {
+  const summary =
+    status.status === "running"
+      ? `<p class="modal-hint">Página actual: ${escapeHtml(status.current_url || "-")}</p>`
+      : "";
+  const skippedNote = status.skipped_binary_urls.length
+    ? `<p class="modal-hint">${status.skipped_binary_urls.length} archivo(s) (PDF/Word/Excel) enlazados no se indexaron automáticamente -- súbelos a mano desde "Subir documento" si los necesitas:</p>
+       <ul class="crawl-skipped-list">${status.skipped_binary_urls.map((u) => `<li>${escapeHtml(u)}</li>`).join("")}</ul>`
+    : "";
+  const errorsNote = status.errors.length
+    ? `<p class="modal-error">${status.errors.length} error(es):</p>
+       <ul class="crawl-skipped-list">${status.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>`
+    : "";
+  const cancelButton =
+    status.status === "running"
+      ? `<button type="button" class="danger" id="crawl-cancel-button">Cancelar</button>`
+      : `<button type="button" class="cancel-button">Cerrar</button>`;
+
+  return `
+    <h3>Indexando: ${escapeHtml(status.seed_url)}</h3>
+    <p><strong>${CRAWL_STATUS_LABELS[status.status] || status.status}</strong> -- ${status.pages_indexed} página(s) indexada(s)${status.pages_failed ? `, ${status.pages_failed} fallida(s)` : ""}.</p>
+    ${summary}
+    ${skippedNote}
+    ${errorsNote}
+    <div class="modal-actions">${cancelButton}</div>
+  `;
+}
+
+function pollCrawlJob(jobId) {
+  const interval = setInterval(async () => {
+    // Si el admin cerró el modal, este contenedor ya no existe -- el
+    // rastreo sigue corriendo en el servidor igual, solo se deja de
+    // consultar desde el navegador.
+    if (!document.getElementById("crawl-progress-root")) {
+      clearInterval(interval);
+      return;
+    }
+    let status;
+    try {
+      const res = await rootFetch(`/api/root/crawl-site/${encodeURIComponent(jobId)}`);
+      if (!res.ok) throw new Error();
+      status = await res.json();
+    } catch {
+      return; // reintenta en el siguiente tick -- un fallo de red puntual no debe detener el seguimiento.
+    }
+
+    modalContentEl.innerHTML = `<div id="crawl-progress-root">${crawlProgressHtml(status)}</div>`;
+    const cancelButton = document.getElementById("crawl-cancel-button");
+    if (cancelButton) {
+      cancelButton.addEventListener("click", async () => {
+        cancelButton.disabled = true;
+        cancelButton.textContent = "Cancelando...";
+        await rootFetch(`/api/root/crawl-site/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+      });
+    }
+    const closeButton = document.querySelector("#crawl-progress-root .cancel-button");
+    if (closeButton) {
+      closeButton.addEventListener("click", () => {
+        closeModal();
+        loadDocuments();
+      });
+    }
+
+    if (status.status !== "running") {
+      clearInterval(interval);
+    }
+  }, 1500);
+}
+
+document.getElementById("new-crawl-button").addEventListener("click", () => {
+  openModal(`
+    <h3>Indexar sitio web</h3>
+    <p class="modal-hint">Descarga la URL indicada y sigue los enlaces que encuentre dentro del mismo dominio y ruta -- cada página queda indexada como un documento más, marcada como no descargable (se muestra un enlace a la página real en vez de un botón de descarga). Puede tardar varios minutos en un sitio grande.</p>
+    <form id="crawl-site-form" class="modal-form">
+      <label>URL inicial
+        <input id="crawl-seed-url" type="url" placeholder="https://www.unilibre.edu.co/cucuta/" required />
+      </label>
+      <label>Ruta permitida (opcional)
+        <input id="crawl-path-prefix" type="text" placeholder="/cucuta -- vacío usa la ruta de la URL inicial" />
+      </label>
+      <p class="modal-hint">Nunca sigue enlaces fuera de este dominio+ruta, aunque el sitio los tenga (portales, subdominios, redes sociales, etc.).</p>
+      <label>Profundidad máxima de enlaces
+        <input id="crawl-max-depth" type="number" min="0" max="5" value="2" />
+      </label>
+      <label>Máximo de páginas
+        <input id="crawl-max-pages" type="number" min="1" max="500" value="50" />
+      </label>
+      <label>Dependencia (opcional)
+        <select id="crawl-dependencia">
+          <option value="">General / compartido</option>
+          ${dependencias.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join("")}
+        </select>
+      </label>
+      <p id="crawl-site-error" class="modal-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button">Cancelar</button>
+        <button type="submit" class="primary-button">Empezar a indexar</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById("crawl-site-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("crawl-site-error");
+    const submitButton = e.target.querySelector("button[type=submit]");
+    const dependenciaValue = document.getElementById("crawl-dependencia").value;
+    errorEl.hidden = true;
+    submitButton.disabled = true;
+    submitButton.textContent = "Empezando...";
+
+    try {
+      const res = await rootFetch("/api/root/crawl-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seed_url: document.getElementById("crawl-seed-url").value.trim(),
+          allowed_path_prefix: document.getElementById("crawl-path-prefix").value.trim() || null,
+          max_depth: Number(document.getElementById("crawl-max-depth").value),
+          max_pages: Number(document.getElementById("crawl-max-pages").value),
+          dependencia_id: dependenciaValue ? Number(dependenciaValue) : null,
+        }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res));
+      const data = await res.json();
+      openModal(`<div id="crawl-progress-root"><h3>Indexando...</h3><p>Empezando el rastreo...</p></div>`);
+      pollCrawlJob(data.job_id);
+    } catch (err) {
+      errorEl.textContent = err.message || "No se pudo iniciar el rastreo.";
+      errorEl.hidden = false;
+      submitButton.disabled = false;
+      submitButton.textContent = "Empezar a indexar";
     }
   });
 });

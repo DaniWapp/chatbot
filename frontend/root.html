@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/root.css?v=19" />
+  <link rel="stylesheet" href="/static/root.css?v=20" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -132,7 +132,10 @@
       <section id="tab-documentos" class="root-tab-panel" hidden>
         <div class="panel-section-header">
           <h2>Documentos</h2>
-          <button id="new-document-button" class="primary-button" type="button">+ Subir documento</button>
+          <div class="header-actions">
+            <button id="new-crawl-button" class="outline-button" type="button">+ Indexar sitio web</button>
+            <button id="new-document-button" class="primary-button" type="button">+ Subir documento</button>
+          </div>
         </div>
         <p class="panel-section-hint">
           Formatos permitidos: PDF, TXT, DOCX, XLSX, JPG, PNG, WEBP. Etiquetar un documento con una dependencia ayuda
@@ -244,6 +247,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="/static/admin-shared.js?v=2"></script>
-  <script src="/static/root.js?v=26"></script>
+  <script src="/static/root.js?v=27"></script>
 </body>
 </html>

@@ -214,6 +214,14 @@ const DOWNLOAD_ICON_SVG =
   '<polyline points="7 10 12 15 17 10"></polyline>' +
   '<line x1="12" y1="15" x2="12" y2="3"></line></svg>';
 
+// Para fuentes que vienen de rastrear un sitio web (sin archivo original
+// que descargar) -- ver renderSources.
+const EXTERNAL_LINK_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>' +
+  '<polyline points="15 3 21 3 21 9"></polyline>' +
+  '<line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+
 // El cambio de color de .downloading (ver style.css) por sí solo es poco
 // visible -- un ícono girando es una señal de "cargando" inequívoca, para
 // que una descarga de varios segundos no se sienta como que el sistema
@@ -283,13 +291,26 @@ function renderSources(block, sources) {
     label.textContent = `${s.document}${page}`;
     item.appendChild(label);
 
-    // downloadable llega en false cuando un admin marcó el documento como
-    // no descargable (ej. un PDF con la marca institucional desactualizada
-    // que igual sirve para responder) -- ver
-    // app/services/ingest_service.py::get_document_downloadable. Sin botón
-    // en vez de uno deshabilitado: no es un problema temporal, es una
-    // decisión permanente del admin.
-    if (s.downloadable !== false) {
+    if (s.source_url) {
+      // Esta fuente viene de rastrear un sitio web (ver
+      // app/services/crawl_job_service.py) -- no hay un archivo original
+      // que descargar, así que se enlaza la página real en su lugar.
+      const link = document.createElement("a");
+      link.className = "source-download-button";
+      link.href = s.source_url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.title = "Ver página original";
+      link.setAttribute("aria-label", `Ver página original de ${s.document}`);
+      link.innerHTML = EXTERNAL_LINK_ICON_SVG;
+      item.appendChild(link);
+    } else if (s.downloadable !== false) {
+      // downloadable llega en false cuando un admin marcó el documento
+      // como no descargable (ej. un PDF con la marca institucional
+      // desactualizada que igual sirve para responder) -- ver
+      // app/services/ingest_service.py::get_document_downloadable. Sin
+      // botón en vez de uno deshabilitado: no es un problema temporal, es
+      // una decisión permanente del admin.
       const button = document.createElement("button");
       button.type = "button";
       button.className = "source-download-button";

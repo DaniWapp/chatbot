@@ -265,6 +265,13 @@ def _get_connection() -> sqlite3.Connection:
         # información sin que el estudiante lo descargue y vea esa imagen.
         _ensure_column(_connection, "document_dependencias", "downloadable", "INTEGER NOT NULL DEFAULT 1")
 
+        # NULL = documento subido a mano (archivo real). Con valor = esta
+        # página se generó rastreando un sitio web (ver
+        # app/services/crawl_job_service.py) -- no hay un archivo "original"
+        # que descargar, así que "Archivos consultados" muestra un enlace a
+        # esta URL en vez de un botón de descarga.
+        _ensure_column(_connection, "document_dependencias", "source_url", "TEXT")
+
         # SHA-256 del contenido crudo tal como se subió (antes de cualquier
         # conversión) -- detecta el mismo archivo/imagen subido más de una
         # vez, sin importar con qué nombre, para no duplicar contenido en
