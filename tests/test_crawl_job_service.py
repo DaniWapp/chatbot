@@ -200,3 +200,99 @@ def test_cancel_job_stops_early_and_marks_cancelled(mock_crawl, mock_embed, mock
 
     assert status["status"] == "cancelled"
     assert status["pages_indexed"] == 1
+
+
+@patch("app.services.ingest_service.vector_store.add_chunks")
+@patch("app.services.ingest_service.embed_texts", return_value=[[0.1, 0.2, 0.3]])
+@patch("app.rag.web_crawler.crawl_site")
+def test_run_job_skips_reingesting_unchanged_page_on_recrawl(mock_crawl, mock_embed, mock_add_chunks, tmp_path, monkeypatch):
+    """Volver a rastrear el mismo sitio no debe recalcular embeddings de
+    una página que no cambió desde el rastreo anterior -- es trabajo de
+    más (ver ingest_service.get_document_hash_by_filename)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    unique = uuid.uuid4().hex
+    url = f"https://sitio.edu/cucuta/estable-{unique}"
+    filename = f"web-estable-{unique}.txt"
+    mock_crawl.return_value = iter([CrawledPage(url=url, filename=filename, text="Contenido que no cambia.")])
+
+    job_id = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    first_status = _wait_until_finished(job_id)
+    assert first_status["pages_indexed"] == 1
+    assert first_status["pages_unchanged"] == 0
+    assert mock_embed.call_count == 1
+
+    # Segundo rastreo, misma URL y mismo texto exacto -- no debe volver a
+    # calcular embeddings ni pisar el archivo.
+    mock_crawl.return_value = iter([CrawledPage(url=url, filename=filename, text="Contenido que no cambia.")])
+    job_id_2 = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    second_status = _wait_until_finished(job_id_2)
+
+    assert second_status["pages_indexed"] == 0
+    assert second_status["pages_unchanged"] == 1
+    assert mock_embed.call_count == 1  # no aumentó -- no se reprocesó
+
+
+@patch("app.services.ingest_service.vector_store.add_chunks")
+@patch("app.services.ingest_service.embed_texts", return_value=[[0.1, 0.2, 0.3]])
+@patch("app.rag.web_crawler.crawl_site")
+def test_run_job_reingests_page_when_content_changed_on_recrawl(mock_crawl, mock_embed, mock_add_chunks, tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    unique = uuid.uuid4().hex
+    url = f"https://sitio.edu/cucuta/cambia-{unique}"
+    filename = f"web-cambia-{unique}.txt"
+    mock_crawl.return_value = iter([CrawledPage(url=url, filename=filename, text="Versión original.")])
+
+    job_id = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    _wait_until_finished(job_id)
+    assert (tmp_path / filename).read_text(encoding="utf-8") == "Versión original."
+
+    mock_crawl.return_value = iter([CrawledPage(url=url, filename=filename, text="Versión actualizada.")])
+    job_id_2 = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    status_2 = _wait_until_finished(job_id_2)
+
+    assert status_2["pages_indexed"] == 1
+    assert status_2["pages_unchanged"] == 0
+    assert (tmp_path / filename).read_text(encoding="utf-8") == "Versión actualizada."
+
+
+@patch("app.rag.web_crawler.crawl_site")
+def test_run_job_does_not_duplicate_pending_file_across_recrawls(mock_crawl, tmp_path, monkeypatch):
+    """Si el mismo PDF ya está pendiente de descarga manual, un segundo
+    rastreo que lo vuelve a encontrar no debe generar una segunda entrada
+    en la lista (ver UNIQUE en crawl_pending_files.url)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    unique = uuid.uuid4().hex
+    pdf_url = f"https://sitio.edu/cucuta/repetido-{unique}.pdf"
+    mock_crawl.return_value = iter(
+        [CrawledPage(url=pdf_url, filename=f"web-repetido-{unique}.pdf", content_bytes=b"%PDF-1.4")]
+    )
+
+    job_id = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    _wait_until_finished(job_id)
+
+    mock_crawl.return_value = iter(
+        [CrawledPage(url=pdf_url, filename=f"web-repetido-{unique}.pdf", content_bytes=b"%PDF-1.4")]
+    )
+    job_id_2 = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    _wait_until_finished(job_id_2)
+
+    matches = [p for p in crawl_job_service.list_pending_files() if p["url"] == pdf_url]
+    assert len(matches) == 1

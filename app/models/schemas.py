@@ -333,6 +333,7 @@ class CrawlJobStatus(BaseModel):
     seed_url: str
     status: str
     pages_indexed: int
+    pages_unchanged: int
     pages_failed: int
     current_url: str
     skipped_binary_urls: List[str]

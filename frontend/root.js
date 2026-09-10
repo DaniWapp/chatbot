@@ -1290,7 +1290,7 @@ function crawlProgressHtml(status) {
 
   return `
     <h3>Indexando: ${escapeHtml(status.seed_url)}</h3>
-    <p><strong>${CRAWL_STATUS_LABELS[status.status] || status.status}</strong> -- ${status.pages_indexed} página(s) indexada(s)${status.pages_failed ? `, ${status.pages_failed} fallida(s)` : ""}.</p>
+    <p><strong>${CRAWL_STATUS_LABELS[status.status] || status.status}</strong> -- ${status.pages_indexed} página(s) indexada(s)${status.pages_unchanged ? `, ${status.pages_unchanged} sin cambios (omitida(s))` : ""}${status.pages_failed ? `, ${status.pages_failed} fallida(s)` : ""}.</p>
     ${summary}
     ${skippedNote}
     ${errorsNote}

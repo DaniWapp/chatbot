@@ -12,6 +12,7 @@ simplemente lo vuelve a lanzar; las páginas ya indexadas antes del
 reinicio quedan indexadas igual (cada una se guarda e ingesta de a una,
 no al final)."""
 import datetime
+import hashlib
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ class CrawlJobState:
     seed_url: str
     status: str = "running"  # running | done | cancelled | error
     pages_indexed: int = 0
+    pages_unchanged: int = 0
     pages_failed: int = 0
     current_url: str = ""
     skipped_binary_urls: List[str] = field(default_factory=list)
@@ -54,6 +56,7 @@ def _job_to_dict(job: CrawlJobState) -> dict:
         "seed_url": job.seed_url,
         "status": job.status,
         "pages_indexed": job.pages_indexed,
+        "pages_unchanged": job.pages_unchanged,
         "pages_failed": job.pages_failed,
         "current_url": job.current_url,
         "skipped_binary_urls": list(job.skipped_binary_urls),
@@ -106,13 +109,19 @@ def dismiss_pending_file(file_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-def _index_page(page: "web_crawler.CrawledPage", dependencia_id: Optional[int]) -> None:
+def _index_page(page: "web_crawler.CrawledPage", dependencia_id: Optional[int], content_hash: str) -> None:
     settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
     path = settings.DOCUMENTS_DIR / page.filename
     path.write_text(page.text, encoding="utf-8")
     ingest_service.set_document_dependencia(page.filename, dependencia_id)
     ingest_service.set_document_source_url(page.filename, page.url)
     ingest_service.set_document_downloadable(page.filename, False)
+    # Reemplaza el hash anterior de este archivo (si cambió de contenido
+    # respecto al rastreo previo) por el nuevo -- ver
+    # _run_job, que usa esto para saltarse el reprocesamiento cuando una
+    # página no cambió desde el último rastreo.
+    ingest_service.delete_document_hash_by_filename(page.filename)
+    ingest_service.record_document_hash(content_hash, page.filename)
     ingest_service.ingest_single_file(path, dependencia_id, log=lambda *_: None)
 
 
@@ -141,7 +150,14 @@ def _run_job(
                 _save_pending_binary_file(page.url, seed_url, dependencia_id)
                 continue
             try:
-                _index_page(page, dependencia_id)
+                content_hash = hashlib.sha256(page.text.encode("utf-8")).hexdigest()
+                if ingest_service.get_document_hash_by_filename(page.filename) == content_hash:
+                    # Mismo contenido que el último rastreo -- no vale la
+                    # pena recalcular embeddings ni reescribir el archivo.
+                    with _lock:
+                        job.pages_unchanged += 1
+                    continue
+                _index_page(page, dependencia_id, content_hash)
                 with _lock:
                     job.pages_indexed += 1
             except Exception as exc:  # noqa: BLE001 - una página fallida no debe tumbar todo el rastreo

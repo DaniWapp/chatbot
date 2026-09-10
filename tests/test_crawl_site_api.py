@@ -78,6 +78,7 @@ def test_crawl_site_starts_job_and_returns_id(mock_start):
         "seed_url": "https://sitio.edu/cucuta/",
         "status": "running",
         "pages_indexed": 3,
+        "pages_unchanged": 0,
         "pages_failed": 0,
         "current_url": "https://sitio.edu/cucuta/ingenieria",
         "skipped_binary_urls": [],

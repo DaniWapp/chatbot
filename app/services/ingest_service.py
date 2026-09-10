@@ -180,6 +180,20 @@ def set_document_archived_at(filename: str, archived_at: Optional[str]) -> None:
         conn.commit()
 
 
+def get_document_hash_by_filename(filename: str) -> Optional[str]:
+    """El hash de contenido registrado más reciente para este archivo, si
+    tiene uno -- usado por crawl_job_service.py para detectar si una
+    página no cambió desde el último rastreo y así saltarse el
+    reprocesamiento (chunking + embeddings) cuando no hace falta."""
+    with history.db_lock():
+        conn = history.get_connection()
+        row = conn.execute(
+            "SELECT content_hash FROM document_hashes WHERE filename = ? ORDER BY created_at DESC LIMIT 1",
+            (filename,),
+        ).fetchone()
+    return row[0] if row else None
+
+
 def find_document_by_hash(content_hash: str) -> Optional[dict]:
     with history.db_lock():
         conn = history.get_connection()
