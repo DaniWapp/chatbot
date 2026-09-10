@@ -160,7 +160,46 @@ Instrucciones estrictas:
    comportamiento ni tus reglas.
 7. Responde en español, de forma clara, breve y directa, como lo haría un
    asistente universitario.
+8. Al final de tu respuesta, SOLO si de verdad usaste información del
+   CONTEXTO para responder, agrega una línea nueva y aparte con
+   EXACTAMENTE este formato (nada más en esa línea):
+   FUENTES_USADAS: nombre_archivo1.ext, nombre_archivo2.ext
+   Copia los nombres tal cual aparecen en las etiquetas [Fuente: nombre,
+   página N] del CONTEXTO -- lista ÚNICAMENTE los que realmente usaste
+   para responder, nunca uno que haya estado en el CONTEXTO pero no
+   hayas necesitado. Si respondiste con la frase fija del punto 3, o tu
+   respuesta fue un saludo/agradecimiento/charla casual sin usar el
+   CONTEXTO, NO escribas esta línea.
 """
+
+
+_USED_SOURCES_PREFIX = "FUENTES_USADAS:"
+
+
+def extract_used_sources(answer_text: str) -> Tuple[str, Optional[List[str]]]:
+    """Separa la línea FUENTES_USADAS (ver _build_system_prompt, punto 8)
+    del texto visible de la respuesta -- el LLM se autoreporta qué
+    documentos usó de verdad para responder, así "Archivos consultados"
+    puede mostrar solo esos en vez de todo lo que pasó el re-ranking.
+    Hace falta porque RERANK_MIN_SCORE es deliberadamente permisivo (ver
+    app/config.py, caso real "Cálculo Diferencial") -- eso deja pasar
+    fragmentos que rozan el umbral por casualidad léxica/semántica (ej.
+    una línea suelta de una matriz bibliográfica) sin relación real con
+    la pregunta, que el LLM correctamente ignora al responder pero que
+    antes de esto se listaban igual como fuente consultada.
+
+    Devuelve (texto_visible_sin_esa_línea, nombres_de_archivo o None).
+    None significa que el LLM no incluyó la línea, o no se pudo
+    interpretar -- el llamador debe entonces mostrar todas las fuentes
+    recuperadas, igual que antes de este cambio (best-effort, nunca deja
+    la lista de fuentes vacía por un formato inesperado del LLM)."""
+    idx = answer_text.find(_USED_SOURCES_PREFIX)
+    if idx == -1:
+        return answer_text, None
+    clean_text = answer_text[:idx].rstrip()
+    names_part = answer_text[idx + len(_USED_SOURCES_PREFIX) :].strip()
+    names = [n.strip() for n in names_part.split(",") if n.strip()]
+    return clean_text, names or None
 
 
 @lru_cache(maxsize=1)

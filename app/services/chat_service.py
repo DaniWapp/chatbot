@@ -50,6 +50,20 @@ def _worth_condensing(question: str) -> bool:
     return len(question.split()) >= _MIN_WORDS_FOR_CONDENSATION
 
 
+def _filter_chunks_by_used_sources(
+    chunks: List[RetrievedChunk], used_document_names: Optional[List[str]]
+) -> List[RetrievedChunk]:
+    """Se queda solo con los chunks de los documentos que el LLM reportó
+    haber usado de verdad (ver llm.extract_used_sources). Si no vino la
+    lista, o ninguno de los nombres coincide con un documento realmente
+    recuperado (ej. el LLM escribió el nombre distinto), se muestran
+    todos los recuperados -- igual que antes de este cambio, nunca peor."""
+    if not used_document_names:
+        return chunks
+    filtered = [c for c in chunks if c.document in used_document_names]
+    return filtered or chunks
+
+
 def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
     """Colapsa varios chunks de la misma página/documento en una sola cita,
     conservando la similitud más alta encontrada."""
@@ -273,6 +287,12 @@ def _draft_response(
     if cached_answer is None:
         answer_cache_service.maybe_store_answer(retrieval_question, chunks, answer_text)
 
+    # Se cachea el texto crudo (con la línea FUENTES_USADAS) arriba, para
+    # que una respuesta repetida servida desde caché también se pueda
+    # filtrar -- recién ahora se separa esa línea del texto visible.
+    answer_text, used_sources = llm.extract_used_sources(answer_text)
+    relevant_chunks = _filter_chunks_by_used_sources(chunks, used_sources)
+
     history_service.record_chat_metrics(
         session_id,
         round(retrieval_ms, 2),
@@ -284,7 +304,7 @@ def _draft_response(
 
     response = ChatResponse(
         answer=answer_text,
-        sources=[] if is_no_info else _dedup_sources(chunks),
+        sources=[] if is_no_info else _dedup_sources(relevant_chunks),
         has_sufficient_info=not is_no_info,
         suggestions=suggestions,
         metrics=ChatMetrics(
@@ -404,6 +424,16 @@ def stream_answer(
     is_no_info = settings.NO_INFO_MESSAGE.strip() in full_answer
     suggestions = _suggest_clarifications(question, dependencia_id=dependencia_id) if is_no_info else []
 
+    if cached_answer is None:
+        # Se cachea el texto crudo (con la línea FUENTES_USADAS) antes de
+        # separarla, para que una respuesta repetida servida desde caché
+        # también se pueda filtrar la próxima vez.
+        answer_cache_service.maybe_store_answer(retrieval_question, chunks, full_answer)
+
+    full_answer, used_sources = llm.extract_used_sources(full_answer)
+    relevant_chunks = _filter_chunks_by_used_sources(chunks, used_sources)
+    sources = [] if is_no_info else _dedup_sources(relevant_chunks)
+
     turn_created_at = _save_and_broadcast_turn(
         session_id,
         question,
@@ -412,9 +442,6 @@ def stream_answer(
         suggestions=suggestions,
         dependencia_id=dependencia_id,
     )
-
-    if cached_answer is None:
-        answer_cache_service.maybe_store_answer(retrieval_question, chunks, full_answer)
 
     history_service.record_chat_metrics(
         session_id,
@@ -427,6 +454,13 @@ def stream_answer(
 
     yield {
         "type": "done",
+        # Fuentes ya filtradas por lo que el LLM reportó haber usado de
+        # verdad (ver llm.extract_used_sources) -- las del evento "meta"
+        # de más arriba se mandaron ANTES de generar la respuesta, con
+        # todo lo que pasó el re-ranking; el frontend debe preferir esta
+        # lista para la sección "Archivos consultados" que se muestra al
+        # final.
+        "sources": [s.model_dump() for s in sources],
         "suggestions": suggestions,
         "turn_created_at": turn_created_at,
         "metrics": {

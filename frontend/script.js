@@ -74,6 +74,16 @@ async function loadDependenciaOptions() {
 const NO_INFO_TEXT =
   "No encontré información suficiente en la documentación disponible para responder esta pregunta.";
 
+// El streaming manda el texto crudo del LLM tal cual llega, incluyendo la
+// línea "FUENTES_USADAS: ..." que el backend usa para filtrar qué se
+// muestra en "Archivos consultados" (ver app/rag/llm.py::extract_used_sources)
+// -- aquí se quita esa línea antes de mostrar el texto, igual que ya hace
+// el backend para el historial guardado.
+function stripUsedSourcesMarker(text) {
+  const idx = text.indexOf("FUENTES_USADAS:");
+  return idx === -1 ? text : text.slice(0, idx).trimEnd();
+}
+
 let notificationAudioCtx = null;
 function playNotificationSound() {
   try {
@@ -932,6 +942,11 @@ async function sendMessage(text) {
         } else if (event.type === "escalated") {
           wasEscalated = true;
         } else if (event.type === "done") {
+          // Reemplaza las fuentes del evento "meta" (mandadas antes de
+          // generar la respuesta, con todo lo que pasó el re-ranking) por
+          // las que el LLM reportó haber usado de verdad -- ver
+          // llm.extract_used_sources en el backend.
+          if (event.sources) sources = event.sources;
           suggestions = event.suggestions || [];
           turnCreatedAt = event.turn_created_at || null;
         } else if (event.type === "error") {
@@ -946,6 +961,7 @@ async function sendMessage(text) {
     // desconexión (catchUpMissedMessages) -- una pequeña diferencia de
     // reloj no rompe nada ahí.
     latestRenderedMessageAt = new Date().toISOString();
+    answerText = stripUsedSourcesMarker(answerText);
 
     const remaining = MIN_TYPING_INDICATOR_MS - (performance.now() - placeholderShownAt);
     if (remaining > 0) await wait(remaining);
