@@ -134,6 +134,13 @@ Instrucciones estrictas:
    no tiene información suficiente para responderla, responde EXACTAMENTE:
    "No encontré información suficiente en la documentación disponible para responder esta pregunta."
    No intentes responder parcialmente inventando el resto.
+2b. Si el CONTEXTO habla del mismo tema general pero de un ASPECTO DISTINTO
+   al que se pregunta (por ejemplo, se pregunta por el PRECIO y el CONTEXTO
+   solo tiene la DURACIÓN del programa, o se pregunta por una carrera
+   específica y el CONTEXTO solo dice qué otra carrera NO se ofrece), eso NO
+   cuenta como información suficiente -- responde con la frase fija del
+   punto 3. No armes una respuesta con el aspecto equivocado solo porque
+   menciona el mismo tema.
 4. Nunca inventes fechas, artículos de reglamento, requisitos, horarios,
    nombres, valores o procedimientos que no aparezcan literalmente en el
    CONTEXTO.
