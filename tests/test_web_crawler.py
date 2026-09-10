@@ -68,6 +68,35 @@ def test_extract_links_resolves_relative_urls():
     assert links == ["https://sitio.edu/cucuta/otra-pagina/"]
 
 
+def test_is_placeholder_text_detects_lorem_ipsum():
+    texto = "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+    assert web_crawler.is_placeholder_text(texto) is True
+
+
+def test_is_placeholder_text_is_case_insensitive():
+    assert web_crawler.is_placeholder_text("LOREM IPSUM dolor sit amet") is True
+
+
+def test_is_placeholder_text_ignores_real_content():
+    texto = "La Facultad de Ingeniería ofrece el programa de Ingeniería en TIC."
+    assert web_crawler.is_placeholder_text(texto) is False
+
+
+def test_is_placeholder_text_ignores_real_page_with_unfinished_post_embedded():
+    """Caso real encontrado en producción: una página de blog con
+    introducción real que, más abajo, lista la vista previa de un post
+    sin redactar (puro Lorem Ipsum). La página completa sigue siendo
+    útil -- no debe descartarse solo por ese fragmento embebido."""
+    texto = (
+        "La Navaja de Ockham es un espacio académico crítico y riguroso "
+        "para reflexionar sobre el Derecho Penal y sus múltiples "
+        "dimensiones, iluminando los dilemas jurídicos contemporáneos.\n"
+        "Editorial #2\n"
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+    )
+    assert web_crawler.is_placeholder_text(texto) is False
+
+
 # --- Cliente HTTP falso, para probar crawl_site sin red real ---------------
 
 
@@ -173,6 +202,33 @@ def test_crawl_site_skips_pages_with_no_extractable_content(mock_extract):
     client = _FakeClient(_make_pages())
     pages = list(web_crawler.crawl_site("https://sitio.edu/cucuta/", max_depth=0, max_pages=10, client=client))
     assert pages == []
+
+
+_PLANTILLA_HTML = '<a href="/cucuta/pagina-real/">real</a>'
+_PAGINA_REAL_HTML = "<p>Contenido real de la facultad.</p>"
+
+
+def _extract_side_effect_con_plantilla(html):
+    if html == _PLANTILLA_HTML:
+        return "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+    return f"contenido extraido de: {html[:20]}"
+
+
+@patch("app.rag.web_crawler.trafilatura.extract", side_effect=_extract_side_effect_con_plantilla)
+def test_crawl_site_skips_placeholder_pages_but_still_follows_their_links(mock_extract):
+    """Una página real del sitio que un editor nunca llegó a completar
+    (Lorem Ipsum publicado por error) no debe indexarse -- pero sus
+    enlaces sí se siguen, por si llevan a contenido real."""
+    client = _FakeClient(
+        {
+            "https://sitio.edu/cucuta": _FakeResponse(text=_PLANTILLA_HTML),
+            "https://sitio.edu/cucuta/pagina-real": _FakeResponse(text=_PAGINA_REAL_HTML),
+        }
+    )
+    pages = list(web_crawler.crawl_site("https://sitio.edu/cucuta/", max_depth=2, max_pages=10, client=client))
+    urls = {p.url for p in pages}
+    assert "https://sitio.edu/cucuta" not in urls
+    assert "https://sitio.edu/cucuta/pagina-real" in urls
 
 
 # --- RobotsCache -------------------------------------------------------------

@@ -175,6 +175,17 @@ protecciones:
   con el contenido principal (descarta menús de navegación, pie de
   página, banners) -- validado manualmente contra el sitio real de la
   universidad antes de construir esta función.
+- **Páginas de plantilla sin editar** (`is_placeholder_text`): un sitio
+  real puede tener páginas publicadas por error o dejadas a medias, con
+  texto de relleno ("Lorem ipsum dolor sit amet...") en vez de contenido
+  real -- caso real encontrado rastreando el sitio de la universidad. Si
+  ese relleno aparece casi al principio del texto extraído, la página
+  **no se indexa** (sus enlaces sí se siguen igual, por si llevan a
+  contenido real). El chequeo es por posición, no por sola presencia de
+  la frase: una página real puede mencionar "Lorem ipsum" de pasada (ej.
+  un blog cuya introducción es real pero que más abajo lista la vista
+  previa de un post todavía sin redactar) -- esa sí se indexa igual, por
+  el resto de su contenido legítimo.
 - Si un enlace apunta a un PDF/DOCX/XLSX (`BINARY_EXTENSIONS`), se
   descarga su contenido crudo pero **no se indexa automáticamente** (ver
   8.d) -- requeriría el mismo tratamiento de conversión que ya tiene la

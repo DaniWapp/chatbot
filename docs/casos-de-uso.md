@@ -473,6 +473,10 @@ Adicional y exclusivo de root:
   contra la versión anterior.
 - **Flujo alterno B -- enlaces a PDF/Word/Excel:** no se indexan solos,
   quedan pendientes de descarga manual (ver CU-31b).
+- **Flujo alterno C -- página de plantilla sin editar:** si el contenido
+  extraído es texto de relleno ("Lorem ipsum...") casi desde el inicio,
+  la página no se indexa -- sus enlaces sí se siguen igual, por si
+  llevan a contenido real (`web_crawler.is_placeholder_text`).
 - **Postcondición:** El chatbot puede usar el contenido rastreado desde
   la primera pregunta posterior, igual que con una subida manual.
 - **Referencia:** `POST /api/root/crawl-site`,

@@ -31,6 +31,29 @@ USER_AGENT = "Mozilla/5.0 (compatible; AsistenteInstitucionalBot/1.0; indexador 
 
 BINARY_EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
 
+# Marca clásica de texto de relleno ("Lorem ipsum dolor sit amet...") --
+# aparece en páginas reales del sitio que un editor nunca llegó a
+# completar (plantillas publicadas por error o dejadas a medias), pero
+# que siguen siendo alcanzables y se indexarían como si fueran contenido
+# real si no se filtran aquí.
+_PLACEHOLDER_MARKER = "lorem ipsum"
+
+# El relleno debe aparecer casi al principio del texto para contar la
+# página ENTERA como plantilla -- no basta con que la mencione en
+# cualquier punto. Caso real encontrado en producción: una página de
+# blog con introducción real, que más abajo lista la vista previa de un
+# post todavía sin redactar (puro Lorem Ipsum) -- esa página sigue
+# siendo útil por el resto de su contenido real, y descartarla entera
+# por ese fragmento sería peor que indexarla.
+_PLACEHOLDER_MAX_LEAD_CHARS = 100
+
+
+def is_placeholder_text(text: str) -> bool:
+    """True si el texto extraído ES la plantilla sin editar (el relleno
+    empieza casi al inicio del texto), no si solo lo menciona de paso."""
+    idx = text.lower().find(_PLACEHOLDER_MARKER)
+    return 0 <= idx <= _PLACEHOLDER_MAX_LEAD_CHARS
+
 
 @dataclass
 class CrawledPage:
@@ -184,7 +207,7 @@ def crawl_site(
                 continue
 
             text = trafilatura.extract(response.text)
-            if text and text.strip():
+            if text and text.strip() and not is_placeholder_text(text):
                 yield CrawledPage(url=url, filename=url_to_filename(url), text=text)
 
             if depth < max_depth:
