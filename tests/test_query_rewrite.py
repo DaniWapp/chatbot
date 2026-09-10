@@ -1,7 +1,8 @@
-"""Pruebas de la reformulación de preguntas de seguimiento antes de buscar
-(app/services/chat_service.py::_needs_query_rewrite,
-app/rag/llm.py::rewrite_query_variations). No dependen de Groq, la red, ni
-del modelo real de re-ranking -- todo se mockea."""
+"""Pruebas de la reformulación de preguntas antes de buscar
+(app/services/chat_service.py::_needs_query_rewrite/_worth_condensing,
+app/rag/llm.py::rewrite_query_variations/condense_query_for_search). No
+dependen de Groq, la red, ni del modelo real de re-ranking -- todo se
+mockea."""
 import uuid
 from unittest.mock import patch
 
@@ -13,21 +14,25 @@ def _chunk(chunk_id: str, text: str) -> RetrievedChunk:
     return RetrievedChunk(chunk_id=chunk_id, text=text, document="doc.txt", page=1, similarity=0.9)
 
 
-# --- Unidad: _needs_query_rewrite -----------------------------------------
+# --- Unidad: _needs_query_rewrite / _worth_condensing ----------------------
 
 
-def test_needs_rewrite_when_no_chunks_and_history_exists():
-    assert chat_service._needs_query_rewrite([], [("pregunta previa", "respuesta previa")]) is True
-
-
-def test_no_rewrite_without_history_even_with_empty_chunks():
-    assert chat_service._needs_query_rewrite([], []) is False
+def test_needs_rewrite_when_no_chunks():
+    assert chat_service._needs_query_rewrite([]) is True
 
 
 def test_no_rewrite_when_chunks_were_found():
     chunk = _chunk("a", "texto")
-    assert chat_service._needs_query_rewrite([chunk], [("pregunta previa", "respuesta previa")]) is False
-    assert chat_service._needs_query_rewrite([chunk], []) is False
+    assert chat_service._needs_query_rewrite([chunk]) is False
+
+
+def test_worth_condensing_a_real_elaborate_question():
+    elaborate = "buenas disculpe la molestia quería preguntarle si me puede ayudar por favor"
+    assert chat_service._worth_condensing(elaborate) is True
+
+
+def test_not_worth_condensing_a_short_greeting():
+    assert chat_service._worth_condensing("hola") is False
 
 
 # --- Integración: chat_service.answer_question ----------------------------
@@ -113,10 +118,16 @@ def test_rewrite_failure_falls_back_to_no_info(mock_retrieve, mock_generate, moc
     assert response.has_sufficient_info is False
 
 
+@patch("app.rag.llm.condense_query_for_search")
 @patch("app.rag.llm.rewrite_query_variations")
 @patch("app.rag.llm.generate_answer")
 @patch("app.services.chat_service.retrieve_context")
-def test_no_history_never_triggers_rewrite(mock_retrieve, mock_generate, mock_rewrite):
+def test_short_greeting_without_history_never_triggers_rewrite(
+    mock_retrieve, mock_generate, mock_rewrite, mock_condense
+):
+    """Un saludo corto sin historial legítimamente no encuentra nada --
+    no debe gastar una llamada a Groq intentando "condensarlo" (ver
+    chat_service._worth_condensing)."""
     unique = uuid.uuid4().hex
     session_id = f"s-rewrite-nohistory-{unique}"  # sesión nueva, sin turnos previos
 
@@ -126,7 +137,39 @@ def test_no_history_never_triggers_rewrite(mock_retrieve, mock_generate, mock_re
     chat_service.answer_question(session_id, "hola")
 
     mock_rewrite.assert_not_called()
+    mock_condense.assert_not_called()
     assert mock_retrieve.call_count == 1
+
+
+@patch("app.services.chat_service.reranker.rerank", side_effect=_rerank_passthrough)
+@patch("app.rag.llm.condense_query_for_search")
+@patch("app.rag.llm.generate_answer")
+@patch("app.services.chat_service.retrieve_context")
+def test_elaborate_question_without_history_retries_with_condensed_query(
+    mock_retrieve, mock_generate, mock_condense, mock_rerank
+):
+    """Caso real que motivó esto: una pregunta larga y llena de rodeos,
+    como primera pregunta de la sesión (sin historial), no debe rendirse
+    -- se condensa (sin usar historial, a diferencia de
+    rewrite_query_variations) y se reintenta la búsqueda con eso."""
+    unique = uuid.uuid4().hex
+    session_id = f"s-condense-{unique}"  # sesión nueva, sin turnos previos
+    elaborate_question = (
+        f"buenas, disculpe la molestia, quería preguntarle si me puede ayudar, "
+        f"la verdad no tengo muy claro cuáles son los requisitos de grado ({unique})"
+    )
+
+    real_chunk = _chunk(f"grado-{unique}", f"Requisitos de grado: X, Y, Z ({unique}).")
+    mock_retrieve.side_effect = [([], 1.0), ([real_chunk], 2.0)]
+    mock_condense.return_value = ["requisitos de grado"]
+    mock_generate.return_value = f"Los requisitos son X, Y, Z ({unique})."
+
+    response = chat_service.answer_question(session_id, elaborate_question)
+
+    assert mock_retrieve.call_count == 2
+    mock_condense.assert_called_once_with(elaborate_question)
+    assert real_chunk.text in mock_generate.call_args.args[1]
+    assert response.has_sufficient_info is True
 
 
 @patch("app.rag.llm.rewrite_query_variations")

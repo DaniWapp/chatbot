@@ -27,15 +27,27 @@ from app.services import hostility_service
 from app.services import ws_manager
 
 
-def _needs_query_rewrite(chunks: List[RetrievedChunk], conversation_history: List[Tuple[str, str]]) -> bool:
-    """La búsqueda semántica solo usa el mensaje actual, nunca el
-    historial -- un seguimiento corto como "precio" tras hablar de
-    "Ingeniería en TIC" no encuentra nada por sí solo. Señal deliberadamente
-    acotada: solo cuando la búsqueda con el mensaje tal cual no encontró
-    NADA y sí hay conversación previa de la cual partir (ver
-    llm.py::rewrite_query_variations) -- evita una llamada extra a Groq en
-    el caso común donde la pregunta ya funciona bien tal cual."""
-    return not chunks and bool(conversation_history)
+def _needs_query_rewrite(chunks: List[RetrievedChunk]) -> bool:
+    """Si la búsqueda con el mensaje tal cual no encontró NADA, vale la
+    pena intentar una reformulación antes de darse por vencido -- ver
+    _try_multi_query_rewrite para cuál de las dos reformulaciones posibles
+    aplica (expandir con historial, o condensar rodeos/cortesías)."""
+    return not chunks
+
+
+# Sin historial de conversación, no vale la pena pedirle a Groq que
+# condense mensajes cortos (saludos, "gracias", etc.): esos legítimamente
+# no encuentran nada porque no son una pregunta real, no porque el
+# embedding se haya diluido -- gastar una llamada ahí sería el caso común
+# que justo se quiere evitar. Una pregunta realmente elaborada (el caso
+# real que motivó esto, ver llm.py::condense_query_for_search) es, por
+# definición, larga -- 6 palabras es un piso bajo a propósito, para no
+# bloquear preguntas cortas pero genuinas.
+_MIN_WORDS_FOR_CONDENSATION = 6
+
+
+def _worth_condensing(question: str) -> bool:
+    return len(question.split()) >= _MIN_WORDS_FOR_CONDENSATION
 
 
 def _dedup_sources(chunks: List[RetrievedChunk]) -> List[SourceCitation]:
@@ -116,23 +128,44 @@ def _try_multi_query_rewrite(
     conversation_history: List[Tuple[str, str]],
     dependencia_id: Optional[int] = None,
 ) -> Tuple[List[RetrievedChunk], str, float]:
-    """Si _needs_query_rewrite decide que hace falta, pide varias
-    reformulaciones autónomas de la pregunta (multi-query retrieval:
-    distintas formulaciones pueden coincidir con fragmentos distintos del
-    índice) y busca con cada una, combinando los fragmentos sin duplicar
-    por chunk_id y re-rankeando el conjunto combinado una vez más para
-    quedarse con los TOP_K realmente mejores entre todas las variaciones.
+    """Si _needs_query_rewrite decide que hace falta (la búsqueda con el
+    mensaje tal cual no encontró nada), pide reformulaciones autónomas de
+    la pregunta (multi-query retrieval: distintas formulaciones pueden
+    coincidir con fragmentos distintos del índice) y busca con cada una,
+    combinando los fragmentos sin duplicar por chunk_id y re-rankeando el
+    conjunto combinado una vez más para quedarse con los TOP_K realmente
+    mejores entre todas las variaciones.
+
+    Hay dos formas de reformular, mutuamente excluyentes, según si hay
+    conversación previa:
+    - Con historial: EXPANDE la pregunta incorporando el tema implícito
+      de turnos anteriores (llm.rewrite_query_variations) -- caso
+      original: un seguimiento corto como "precio" tras hablar de
+      "Ingeniería en TIC".
+    - Sin historial: CONDENSA la pregunta tal cual, quitando rodeos y
+      cortesías que diluyen el embedding (llm.condense_query_for_search)
+      -- caso real verificado: una pregunta con cortesías/dudas no pasa
+      el umbral de relevancia por sí sola aunque el tema sí esté en los
+      documentos. Solo se intenta si la pregunta tiene un tamaño mínimo
+      (_worth_condensing) -- un saludo corto sin historial legítimamente
+      no encuentra nada, y no vale la pena gastar una llamada a Groq ahí.
 
     Devuelve (chunks, pregunta_para_retrieval_y_caché, retrieval_ms ya
     incluyendo el costo de esto). Si no hacía falta reformular, o ninguna
     variación encontró nada mejor, devuelve los chunks y la pregunta
     original sin cambios -- nunca deja la búsqueda peor de lo que ya
     estaba."""
-    if not _needs_query_rewrite(chunks, conversation_history):
+    if not _needs_query_rewrite(chunks):
+        return chunks, question, retrieval_ms
+
+    if not conversation_history and not _worth_condensing(question):
         return chunks, question, retrieval_ms
 
     rewrite_start = time.perf_counter()
-    variations = llm.rewrite_query_variations(question, conversation_history)
+    if conversation_history:
+        variations = llm.rewrite_query_variations(question, conversation_history)
+    else:
+        variations = llm.condense_query_for_search(question)
     combined: List[RetrievedChunk] = []
     seen_ids = set()
     for variation in variations:
@@ -144,16 +177,27 @@ def _try_multi_query_rewrite(
                 seen_ids.add(c.chunk_id)
                 combined.append(c)
 
+    # Re-rankear (y filtrar vigencia) contra la MEJOR VARIACIÓN, no contra
+    # la pregunta original -- bug real encontrado al verificar esto con el
+    # cross-encoder de verdad (no el mock de las pruebas): para la pregunta
+    # elaborada que motivó condense_query_for_search, la variante
+    # encontraba los 3 chunks correctos, pero re-rankearlos contra la
+    # pregunta original (con los rodeos) los hacía sobrevivir 0 -- el
+    # mismo problema de dilución que afecta al embedding afecta también el
+    # juicio del cross-encoder. Con un seguimiento corto tipo "precio" esto
+    # pasaba desapercibido (una palabra sola no diluye tanto), pero es el
+    # mismo bug.
+    best_variation = variations[0] if variations else question
     retrieval_question = question
     if combined:
         if settings.RERANK_ENABLED:
-            combined = reranker.rerank(question, combined, settings.TOP_K, settings.RERANK_MIN_SCORE)
+            combined = reranker.rerank(best_variation, combined, settings.TOP_K, settings.RERANK_MIN_SCORE)
         else:
             combined = combined[: settings.TOP_K]
-        combined = drop_superseded_by_vigencia(question, combined)
+        combined = drop_superseded_by_vigencia(best_variation, combined)
     if combined:
         chunks = combined
-        retrieval_question = variations[0]
+        retrieval_question = best_variation
 
     retrieval_ms += (time.perf_counter() - rewrite_start) * 1000
     return chunks, retrieval_question, retrieval_ms

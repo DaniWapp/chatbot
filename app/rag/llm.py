@@ -304,6 +304,59 @@ def rewrite_query_variations(
         return []
 
 
+def condense_query_for_search(question: str, max_variations: int = 3) -> List[str]:
+    """Reescribe una pregunta larga o llena de rodeos/cortesías como hasta
+    max_variations versiones más cortas y directas, conservando el mismo
+    significado -- el modelo de embeddings (pensado para oraciones cortas,
+    ver docs/conceptos-embeddings.md) pierde precisión cuando el relleno
+    conversacional diluye los términos clave. Caso real medido: "buenas,
+    disculpe la molestia, quería preguntarle si... no estoy seguro" dio
+    0.0011 de confianza en el re-ranker (por debajo de RERANK_MIN_SCORE),
+    la misma pregunta sin rodeos dio 0.1384 -- el problema es el relleno,
+    no la longitud en sí (una versión larga pero directa dio 0.4981).
+
+    A diferencia de rewrite_query_variations (que EXPANDE una pregunta
+    corta/ambigua usando el historial de conversación), esta función
+    CONDENSA una pregunta ya autónoma que, por su redacción, no vectoriza
+    bien -- no necesita ni usa historial. Se usa cuando la búsqueda con
+    la pregunta tal cual no encontró nada Y no hay conversación previa de
+    la cual partir (ver chat_service.py::_try_multi_query_rewrite). Nunca
+    se le muestra al estudiante ni se usa como la pregunta final para el
+    LLM.
+
+    Nunca lanza: ante cualquier fallo de Groq o una respuesta no parseable
+    devuelve lista vacía, y el llamador sigue con la pregunta original sin
+    condensar -- best-effort."""
+    prompt = (
+        f"Reescribe la siguiente pregunta como hasta {max_variations} versiones más "
+        "cortas y directas, conservando EXACTAMENTE el mismo significado -- sin agregar "
+        "ni quitar información. Quita cortesías, rodeos, dudas y repeticiones (\"buenas\", "
+        "\"disculpe la molestia\", \"no estoy seguro\", \"la verdad\"), y conserva los "
+        "términos clave. Varía la redacción entre las versiones (sinónimos, orden distinto) "
+        "para cubrir más formas de encontrar la misma información.\n\n"
+        f"PREGUNTA ORIGINAL: {question}\n\n"
+        'Responde ÚNICAMENTE con JSON: {"variations": ["...", "..."]}'
+    )
+    try:
+        completion = _create_completion(
+            "condense_query",
+            model=settings.GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_completion_tokens=200,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        variations = parsed.get("variations")
+        if not isinstance(variations, list):
+            return []
+        return [v.strip() for v in variations if isinstance(v, str) and v.strip()][:max_variations]
+    except Exception:
+        logger.exception("Fallo condensando la pregunta para mejorar la búsqueda")
+        return []
+
+
 def classify_department(
     question: str, dependencias: List[dict], chunk_hints: Optional[List[dict]] = None
 ) -> Optional[int]:
