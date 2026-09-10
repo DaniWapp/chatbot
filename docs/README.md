@@ -58,6 +58,14 @@ detallados, y guías para usuarios concretos.
 - **[estructura-del-proyecto.md](estructura-del-proyecto.md)** -- árbol de
   directorios completo y qué hace cada archivo.
 
+## Análisis y planificación de capacidad
+
+- **[analisis-capacidad-500-documentos.md](analisis-capacidad-500-documentos.md)**
+  -- ¿sigue siendo viable con 500 documentos indexados en vez de los que
+  hay hoy? Rendimiento, uso de memoria y el único riesgo real (precisión,
+  no velocidad), con números medidos en producción y extrapolados con su
+  metodología explícita.
+
 ## Flujos internos y conceptos (para quien va a tocar el código)
 
 - **[flujo-chat-en-vivo.md](flujo-chat-en-vivo.md)** -- qué pasa, paso a
