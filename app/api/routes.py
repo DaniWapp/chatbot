@@ -1606,8 +1606,22 @@ def accept_faq_candidate_route(candidate_id: int) -> IngestResponse:
 
     filename = _faq_filename_for_dependencia(candidate["dependencia_id"])
     settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    faq_path = settings.DOCUMENTS_DIR / filename
     entry = f"Pregunta: {candidate['suggested_question']}\nRespuesta: {candidate['suggested_answer']}\n\n"
-    with open(settings.DOCUMENTS_DIR / filename, "a", encoding="utf-8") as f:
+    # Cada entrada escribe su propia línea en blanco de cierre, pero eso solo
+    # separa correctamente la SIGUIENTE si el archivo YA terminaba bien
+    # separado -- si por lo que sea no era así (edición manual, una entrada
+    # anterior de antes de este fix), esta nueva quedaría pegada a la
+    # anterior en el mismo fragmento al reingestar (caso real: el precio de
+    # Ingeniería Ambiental y el de Ingeniería en TIC terminaron en un solo
+    # chunk, y el chatbot mezclaba ambos en la misma respuesta). Se
+    # verifica y corrige el separador antes de escribir, sin importar cómo
+    # haya quedado el archivo hasta ahora.
+    if faq_path.exists():
+        existing = faq_path.read_text(encoding="utf-8")
+        if existing and not existing.endswith("\n\n"):
+            entry = ("\n" if not existing.endswith("\n") else "") + "\n" + entry
+    with open(faq_path, "a", encoding="utf-8") as f:
         f.write(entry)
     ingest_service.set_document_dependencia(filename, candidate["dependencia_id"])
 

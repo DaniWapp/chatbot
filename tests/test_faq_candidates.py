@@ -231,6 +231,43 @@ def test_accept_candidate_writes_file_and_reingests(tmp_path, monkeypatch):
     assert faq_service.get_candidate(candidate["id"])["status"] == "accepted"
 
 
+def test_accept_candidate_fixes_missing_blank_line_separator(tmp_path, monkeypatch):
+    """Caso real: una entrada anterior del archivo de FAQ quedó sin línea
+    en blanco al final (ej. una edición manual, o una entrada de antes de
+    este fix) -- el chunker de FAQ (app/rag/chunker.py::_pack_faq_entries)
+    separa por línea en blanco, así que sin ella dos preguntas distintas
+    se fusionan en un solo fragmento al reingestar (esto pasó de verdad en
+    producción: el precio de un programa y el de otro totalmente distinto
+    terminaron en el mismo fragmento, y el chatbot mezclaba ambos en la
+    misma respuesta). Aceptar una nueva FAQ debe corregir la separación en
+    vez de pegarse encima de un archivo ya mal formado."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+
+    faq_file = tmp_path / "faq_generadas_general.txt"
+    faq_file.write_text("Pregunta: ¿Existe algo?\nRespuesta: Sí.", encoding="utf-8")  # sin línea en blanco final
+
+    root_token = _login_as(role="root")
+    general_token = _login_as(role="general")
+    sid = "faq-accept-missing-blank-line"
+    _escalate_and_resolve(sid, None, admin_token=general_token, advisor_message="Respuesta a aceptar")
+
+    pending = client.get("/api/root/faq-candidates?status=pending", headers=_auth(root_token)).json()
+    candidate = next(c for c in pending if c["session_id"] == sid)
+
+    with (
+        patch("app.services.ingest_service.embed_texts", return_value=[[0.1, 0.2, 0.3]]),
+        patch("app.services.ingest_service.vector_store.add_chunks"),
+        patch("app.services.ingest_service.vector_store.reset_collection"),
+    ):
+        accept_res = client.post(f"/api/root/faq-candidates/{candidate['id']}/accept", headers=_auth(root_token))
+
+    assert accept_res.status_code == 200
+    content = faq_file.read_text(encoding="utf-8")
+    assert "Respuesta: Sí.\n\nPregunta:" in content
+
+
 def test_accept_already_decided_candidate_is_rejected_with_409():
     root_token = _login_as(role="root")
     general_token = _login_as(role="general")
