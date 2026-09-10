@@ -339,6 +339,14 @@ class CrawlJobStatus(BaseModel):
     errors: List[str]
 
 
+class CrawlPendingFile(BaseModel):
+    id: int
+    url: str
+    seed_url: Optional[str] = None
+    dependencia_id: Optional[int] = None
+    created_at: str
+
+
 class DocumentPreviewResponse(BaseModel):
     filename: str
     text: str

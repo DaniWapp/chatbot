@@ -82,6 +82,40 @@ def test_run_job_skips_binary_pages_without_indexing(mock_crawl, tmp_path, monke
     assert not (tmp_path / "web-res.pdf").exists()
 
 
+@patch("app.rag.web_crawler.crawl_site")
+def test_run_job_persists_skipped_binary_files_for_manual_review(mock_crawl, tmp_path, monkeypatch):
+    """El modal de progreso se puede cerrar (o el servidor reiniciar) antes
+    de que el admin suba los PDF a mano -- deben quedar en la base de
+    datos, no solo en el estado en memoria del job."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    unique = uuid.uuid4().hex
+    pdf_url = f"https://sitio.edu/cucuta/res-{unique}.pdf"
+    mock_crawl.return_value = iter(
+        [CrawledPage(url=pdf_url, filename=f"web-res-{unique}.pdf", content_bytes=b"%PDF-1.4")]
+    )
+
+    job_id = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=3
+    )
+    _wait_until_finished(job_id)
+
+    pending = crawl_job_service.list_pending_files()
+    match = next((p for p in pending if p["url"] == pdf_url), None)
+    assert match is not None
+    assert match["dependencia_id"] == 3
+    assert match["seed_url"] == "https://sitio.edu/cucuta/"
+
+    assert crawl_job_service.dismiss_pending_file(match["id"]) is True
+    pending_after = crawl_job_service.list_pending_files()
+    assert all(p["id"] != match["id"] for p in pending_after)
+
+
+def test_dismiss_pending_file_returns_false_for_unknown_id():
+    assert crawl_job_service.dismiss_pending_file(999999) is False
+
+
 @patch("app.services.ingest_service.vector_store.add_chunks")
 @patch("app.services.ingest_service.embed_texts", return_value=[[0.1, 0.2, 0.3]])
 @patch("app.rag.web_crawler.crawl_site")

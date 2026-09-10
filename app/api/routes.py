@@ -38,6 +38,7 @@ from app.models.schemas import (
     ChatResponse,
     CheckinResponseRequest,
     CrawlJobStatus,
+    CrawlPendingFile,
     CrawlSiteRequest,
     DashboardResponse,
     DependenciaCreateRequest,
@@ -1500,6 +1501,24 @@ def cancel_crawl_site_route(job_id: str) -> dict:
     cancelled = crawl_job_service.cancel_job(job_id)
     if not cancelled:
         raise HTTPException(status_code=404, detail="Ese rastreo no existe o ya terminó.")
+    return {"status": "ok"}
+
+
+@router.get(
+    "/root/crawl-pending-files", response_model=List[CrawlPendingFile], dependencies=[Depends(require_root)]
+)
+def list_crawl_pending_files_route() -> List[CrawlPendingFile]:
+    """PDF/DOCX/XLSX que algún rastreo encontró pero no pudo indexar solo --
+    persiste en la base de datos (no en el estado en memoria del job) para
+    que sigan disponibles aunque se haya cerrado el modal de progreso."""
+    return [CrawlPendingFile(**f) for f in crawl_job_service.list_pending_files()]
+
+
+@router.delete("/root/crawl-pending-files/{file_id}", dependencies=[Depends(require_root)])
+def dismiss_crawl_pending_file_route(file_id: int) -> dict:
+    dismissed = crawl_job_service.dismiss_pending_file(file_id)
+    if not dismissed:
+        raise HTTPException(status_code=404, detail="Ese archivo pendiente no existe (o ya se descartó).")
     return {"status": "ok"}
 
 

@@ -111,3 +111,46 @@ def test_cancel_crawl_job_returns_404_when_not_found_or_finished(mock_cancel):
     token = _login_as()
     res = client.post("/api/root/crawl-site/no-existe/cancel", headers=_auth(token))
     assert res.status_code == 404
+
+
+def test_crawl_pending_files_requires_root():
+    dep_id = admin_service.create_dependencia("Dep Crawl Pending Auth", "")
+    token = _login_as(role="dependencia", dependencia_id=dep_id)
+    res = client.get("/api/root/crawl-pending-files", headers=_auth(token))
+    assert res.status_code == 403
+
+
+@patch(
+    "app.services.crawl_job_service.list_pending_files",
+    return_value=[
+        {
+            "id": 1,
+            "url": "https://sitio.edu/cucuta/pensum.pdf",
+            "seed_url": "https://sitio.edu/cucuta/",
+            "dependencia_id": None,
+            "created_at": "2026-09-10T12:00:00+00:00",
+        }
+    ],
+)
+def test_list_crawl_pending_files(mock_list):
+    token = _login_as()
+    res = client.get("/api/root/crawl-pending-files", headers=_auth(token))
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body) == 1
+    assert body[0]["url"] == "https://sitio.edu/cucuta/pensum.pdf"
+
+
+@patch("app.services.crawl_job_service.dismiss_pending_file", return_value=True)
+def test_dismiss_crawl_pending_file(mock_dismiss):
+    token = _login_as()
+    res = client.delete("/api/root/crawl-pending-files/1", headers=_auth(token))
+    assert res.status_code == 200
+    mock_dismiss.assert_called_once_with(1)
+
+
+@patch("app.services.crawl_job_service.dismiss_pending_file", return_value=False)
+def test_dismiss_crawl_pending_file_returns_404_when_not_found(mock_dismiss):
+    token = _login_as()
+    res = client.delete("/api/root/crawl-pending-files/999", headers=_auth(token))
+    assert res.status_code == 404

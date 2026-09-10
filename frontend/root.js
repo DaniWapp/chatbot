@@ -63,6 +63,7 @@ async function tryEnterApp() {
     await loadDependencias();
     await loadAdmins();
     await loadDocuments(); // depende de que dependencias ya esté cargado (nombres en la tabla)
+    await loadCrawlPendingFiles();
     await loadFaqCandidates();
     await loadHostilityKeywords();
     await loadWidgetOrigins();
@@ -986,6 +987,54 @@ function renderDocumentsTable() {
   }
 }
 
+// --- Archivos pendientes de un rastreo (PDF/Word/Excel no indexables solos) ---
+
+async function loadCrawlPendingFiles() {
+  try {
+    const res = await rootFetch("/api/root/crawl-pending-files");
+    const files = await res.json();
+    renderCrawlPendingFiles(files);
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+}
+
+function renderCrawlPendingFiles(files) {
+  const sectionEl = document.getElementById("crawl-pending-files-section");
+  const listEl = document.getElementById("crawl-pending-files-list");
+  sectionEl.hidden = files.length === 0;
+  listEl.innerHTML = "";
+
+  for (const file of files) {
+    const li = document.createElement("li");
+    li.className = "crawl-pending-item";
+    li.innerHTML = `
+      <div class="crawl-pending-info">
+        <a href="${escapeHtml(file.url)}" target="_blank" rel="noopener">${escapeHtml(file.url)}</a>
+        <span class="crawl-pending-meta">${escapeHtml(dependenciaLabelFor(file.dependencia_id))} · encontrado ${escapeHtml(formatTime(file.created_at))}</span>
+      </div>
+      <button type="button" class="dismiss-pending-button">Descartar</button>
+    `;
+    li.querySelector(".dismiss-pending-button").addEventListener("click", () => dismissCrawlPendingFile(file));
+    listEl.appendChild(li);
+  }
+}
+
+async function dismissCrawlPendingFile(file) {
+  if (!confirm(`¿Descartar "${file.url}" de la lista? Solo la quita de aquí -- no borra nada, úsalo cuando ya lo hayas subido a mano.`))
+    return;
+  try {
+    const res = await rootFetch(`/api/root/crawl-pending-files/${file.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert(await errorDetail(res));
+      return;
+    }
+    await loadCrawlPendingFiles();
+  } catch {
+    // rootFetch ya maneja el caso de sesión inválida.
+  }
+}
+
 async function previewDocument(filename, basePath) {
   openModal(`<h3>Vista previa: ${escapeHtml(filename)}</h3><p>Cargando...</p>`, { wide: true });
   try {
@@ -1281,6 +1330,7 @@ function pollCrawlJob(jobId) {
       closeButton.addEventListener("click", () => {
         closeModal();
         loadDocuments();
+        loadCrawlPendingFiles();
       });
     }
 

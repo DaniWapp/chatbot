@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/static/root.css?v=23" />
+  <link rel="stylesheet" href="/static/root.css?v=24" />
 </head>
 <body>
   <div id="auth-gate" class="auth-gate" hidden>
@@ -144,6 +144,16 @@
           al chatbot a decidir a quién redirigir las preguntas relacionadas con su contenido. Cada
           cambio reconstruye el índice automáticamente.
         </p>
+
+        <section id="crawl-pending-files-section" class="crawl-pending-section" hidden>
+          <h3>Archivos pendientes de descarga manual</h3>
+          <p class="panel-section-hint">
+            Un rastreo de sitio web encontró estos PDF/Word/Excel enlazados pero no pudo indexarlos solo --
+            ábrelos, descárgalos y súbelos con "+ Subir documento" si los necesitas.
+          </p>
+          <ul id="crawl-pending-files-list" class="crawl-pending-list"></ul>
+        </section>
+
         <input
           id="documents-search"
           type="text"
@@ -249,6 +259,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="/static/admin-shared.js?v=2"></script>
-  <script src="/static/root.js?v=29"></script>
+  <script src="/static/root.js?v=30"></script>
 </body>
 </html>

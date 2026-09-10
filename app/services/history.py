@@ -272,6 +272,25 @@ def _get_connection() -> sqlite3.Connection:
         # esta URL en vez de un botón de descarga.
         _ensure_column(_connection, "document_dependencias", "source_url", "TEXT")
 
+        # PDF/DOCX/XLSX enlazados que un rastreo de sitio web (ver
+        # app/services/crawl_job_service.py) encontró pero no indexó
+        # automáticamente -- persiste aquí (no solo en el estado en memoria
+        # del job) para que el admin pueda revisarlos y subirlos a mano
+        # incluso después de cerrar el modal de progreso o de reiniciar el
+        # servidor. UNIQUE en url para no duplicar si el mismo enlace
+        # aparece en más de un rastreo.
+        _connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crawl_pending_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL UNIQUE,
+                seed_url TEXT,
+                dependencia_id INTEGER,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         # SHA-256 del contenido crudo tal como se subió (antes de cualquier
         # conversión) -- detecta el mismo archivo/imagen subido más de una
         # vez, sin importar con qué nombre, para no duplicar contenido en

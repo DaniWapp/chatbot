@@ -11,6 +11,7 @@ reinicio del servidor. Si eso pasa a mitad de un rastreo, el admin
 simplemente lo vuelve a lanzar; las páginas ya indexadas antes del
 reinicio quedan indexadas igual (cada una se guarda e ingesta de a una,
 no al final)."""
+import datetime
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from typing import Dict, List, Optional
 
 from app.config import settings
 from app.rag import web_crawler
+from app.services import history
 from app.services import ingest_service
 
 # Los PDF/DOCX/XLSX enlazados desde una página se detectan (ver
@@ -74,6 +76,36 @@ def cancel_job(job_id: str) -> bool:
         return True
 
 
+def _save_pending_binary_file(url: str, seed_url: str, dependencia_id: Optional[int]) -> None:
+    with history.db_lock():
+        conn = history.get_connection()
+        conn.execute(
+            "INSERT OR IGNORE INTO crawl_pending_files (url, seed_url, dependencia_id, created_at) VALUES (?, ?, ?, ?)",
+            (url, seed_url, dependencia_id, datetime.datetime.now(datetime.timezone.utc).isoformat()),
+        )
+        conn.commit()
+
+
+def list_pending_files() -> List[dict]:
+    with history.db_lock():
+        conn = history.get_connection()
+        rows = conn.execute(
+            "SELECT id, url, seed_url, dependencia_id, created_at FROM crawl_pending_files ORDER BY created_at DESC"
+        ).fetchall()
+    return [
+        {"id": row[0], "url": row[1], "seed_url": row[2], "dependencia_id": row[3], "created_at": row[4]}
+        for row in rows
+    ]
+
+
+def dismiss_pending_file(file_id: int) -> bool:
+    with history.db_lock():
+        conn = history.get_connection()
+        cursor = conn.execute("DELETE FROM crawl_pending_files WHERE id = ?", (file_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def _index_page(page: "web_crawler.CrawledPage", dependencia_id: Optional[int]) -> None:
     settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
     path = settings.DOCUMENTS_DIR / page.filename
@@ -106,6 +138,7 @@ def _run_job(
             if page.content_bytes is not None:
                 with _lock:
                     job.skipped_binary_urls.append(page.url)
+                _save_pending_binary_file(page.url, seed_url, dependencia_id)
                 continue
             try:
                 _index_page(page, dependencia_id)
