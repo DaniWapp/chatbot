@@ -254,6 +254,10 @@ contraseña por consola.
 La documentación interactiva de la API (Swagger) está disponible en:
 http://localhost:8000/docs
 
+> ¿Vas a desplegar esto en un servidor Linux (VPS)? Ver
+> [docs/instalacion-linux.md](docs/instalacion-linux.md) -- guía paso a
+> paso por SSH, con systemd, nginx y HTTPS.
+
 ## 7. Panel de administración y sistema de roles
 
 Además del chat para estudiantes, el proyecto incluye un panel de
