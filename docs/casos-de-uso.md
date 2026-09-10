@@ -150,12 +150,25 @@ repiten lo ya cubierto.
 ### CU-08: Descargar el documento original citado como fuente
 
 - **Actor:** Estudiante.
-- **Precondición:** Una respuesta cita un documento como fuente.
+- **Precondición:** Una respuesta cita un documento como fuente y ese
+  documento es descargable.
 - **Flujo principal:**
   1. El estudiante hace clic en la fuente citada.
   2. El sistema sirve el archivo original (PDF/DOCX/XLSX tal como se
-     subió, no el `.txt` derivado usado internamente para indexar).
-- **Referencia:** `GET /api/documents/{filename}/download`.
+     subió, no el `.txt` derivado usado internamente para indexar),
+     mostrando un ícono girando mientras dura la descarga.
+- **Flujo alterno A -- documento marcado no descargable:** un admin
+  desmarcó el checkbox "Descargable" para ese documento (ver CU-18/
+  CU-23/CU-31) -- no aparece ningún botón de descarga para esa fuente, el
+  documento sigue siendo usado por el chatbot para responder igual.
+- **Flujo alterno B -- documento que vino de un rastreo de sitio web:** en
+  vez de un botón de descarga, la fuente muestra un enlace que abre en
+  una pestaña nueva la página web real de donde se extrajo el contenido
+  (`source_url`) -- no existe un archivo "original" que descargar, solo
+  la página (ver CU-31a).
+- **Referencia:** `GET /api/documents/{filename}/download`; campos
+  `downloadable` y `source_url` de `SourceCitation`
+  (`app/services/chat_service.py::_dedup_sources`).
 
 ---
 
@@ -272,6 +285,22 @@ dependencia.
 - **Referencia:** `DELETE /api/admin/documents/{filename}`,
   `PUT /api/admin/documents/{filename}/archive`.
 
+### CU-18a: Marcar un documento propio como no descargable
+
+- **Actor:** Asesor de dependencia.
+- **Precondición:** El documento pertenece a su propia dependencia.
+- **Motivo real:** documentos que sí sirven para alimentar al chatbot
+  pero cuya imagen/marca institucional ya no está actualizada (ej. un
+  PDF con un logo antiguo) -- se quiere seguir usando como fuente de
+  información sin que el estudiante lo descargue y lo vea.
+- **Flujo principal:** Desmarca el checkbox "Descargable" en la tabla de
+  documentos -- el documento sigue indexado y respondiendo preguntas
+  normalmente, solo deja de ofrecerse para descarga (ver CU-08, flujo
+  alterno A).
+- **Flujo alterno:** Intentar sobre un documento de otra dependencia →
+  rechazado (403), mismo criterio que CU-18.
+- **Referencia:** `PUT /api/admin/documents/{filename}/downloadable`.
+
 ### CU-19: Configurar el horario de atención de su dependencia
 
 - **Actor:** Asesor de dependencia.
@@ -321,8 +350,11 @@ dependencia. Diferencias:
   dependencias (paridad con root); al subir puede elegir cualquier
   dependencia o dejarlo general/compartido; puede **recategorizar**
   (cambiar la dependencia) un documento ya subido -- algo que un
-  administrador de dependencia no puede hacer.
-- **Referencia:** `PUT /api/admin/documents/{filename}` (recategorizar).
+  administrador de dependencia no puede hacer. También puede marcar
+  cualquier documento como no descargable (CU-18a), sin la restricción
+  de "solo el propio" que sí aplica a un administrador de dependencia.
+- **Referencia:** `PUT /api/admin/documents/{filename}` (recategorizar),
+  `PUT /api/admin/documents/{filename}/downloadable`.
 
 ### CU-24: Ver el Dashboard agregado con desglose por dependencia
 
@@ -404,12 +436,70 @@ Adicional y exclusivo de root:
 ### CU-31: Gestionar documentos globales (paridad con CU-23, más archivo/vista previa)
 
 - **Actor:** Root.
-- **Flujo principal:** Sube, etiqueta, recategoriza, elimina, archiva o
-  reactiva cualquier documento del sistema; puede previsualizar su
-  contenido antes de decidir.
+- **Flujo principal:** Sube, etiqueta, recategoriza, elimina, archiva,
+  reactiva, o marca como no descargable (CU-18a) cualquier documento del
+  sistema; puede previsualizar su contenido antes de decidir.
 - **Referencia:** `POST /api/root/documents`,
   `PUT /api/root/documents/{filename}/archive`,
+  `PUT /api/root/documents/{filename}/downloadable`,
   `GET /api/root/documents/{filename}/preview`.
+
+### CU-31a: Indexar automáticamente un sitio web completo
+
+- **Actor:** Root (exclusivo -- ni general ni dependencia lo ven en su
+  panel).
+- **Motivo real:** poblar el índice con el contenido público de la
+  institución (ej. las páginas de la facultad en el sitio de la
+  universidad) sin descargar y subir cada página a mano.
+- **Precondición:** Ninguna -- no depende de tener documentos previos.
+- **Flujo principal:**
+  1. Abre el modal "+ Indexar sitio web" (pestaña Documentos) e ingresa
+     la URL inicial; opcionalmente una ruta permitida, la profundidad
+     máxima de enlaces (0-5), el máximo de páginas (1-500) y una
+     dependencia para etiquetar todo lo indexado.
+  2. El sistema recorre en segundo plano esa URL y las que encuentre
+     enlazadas, sin salir nunca del dominio+ruta permitida y respetando
+     `robots.txt`.
+  3. El modal muestra el progreso en vivo: páginas indexadas, sin
+     cambios, fallidas, y la URL actual. Root puede cancelarlo en
+     cualquier momento.
+  4. Cada página de texto queda indexada como un documento normal
+     (mismo pipeline que subir un archivo), pero marcada no descargable
+     y con un enlace a la página real en vez de botón de descarga (ver
+     CU-08, flujo alterno B).
+- **Flujo alterno A -- re-rastreo de un sitio ya indexado:** si el
+  contenido de una página no cambió desde la última vez, se salta el
+  reprocesamiento (no se recalculan embeddings) -- se compara por hash
+  contra la versión anterior.
+- **Flujo alterno B -- enlaces a PDF/Word/Excel:** no se indexan solos,
+  quedan pendientes de descarga manual (ver CU-31b).
+- **Postcondición:** El chatbot puede usar el contenido rastreado desde
+  la primera pregunta posterior, igual que con una subida manual.
+- **Referencia:** `POST /api/root/crawl-site`,
+  `GET /api/root/crawl-site/{job_id}`,
+  `POST /api/root/crawl-site/{job_id}/cancel`,
+  `app/services/crawl_job_service.py`, `app/rag/web_crawler.py`.
+
+### CU-31b: Revisar archivos pendientes de descarga manual
+
+- **Actor:** Root.
+- **Precondición:** Un rastreo (CU-31a) encontró al menos un PDF/DOCX/XLSX
+  enlazado.
+- **Flujo principal:**
+  1. En la pestaña Documentos, la sección "Archivos pendientes de
+     descarga manual" muestra cada enlace encontrado (clicable, abre la
+     página real en pestaña nueva), la dependencia asociada y cuándo se
+     encontró.
+  2. Root lo descarga desde el enlace y, si lo necesita indexado, lo
+     sube a mano con "+ Subir documento" (CU-31).
+  3. Puede descartar la entrada de la lista sin haber subido nada.
+- **Postcondición:** La lista persiste en la base de datos -- sigue
+  disponible aunque se cierre el modal de progreso del rastreo o se
+  reinicie el servidor. Un mismo enlace encontrado en más de un rastreo
+  no genera una segunda entrada.
+- **Referencia:** `GET /api/root/crawl-pending-files`,
+  `DELETE /api/root/crawl-pending-files/{file_id}`, tabla
+  `crawl_pending_files`.
 
 ### CU-32: Revisar sugerencias automáticas de preguntas frecuentes
 
@@ -484,11 +574,14 @@ plano como parte del comportamiento normal del sistema.
 
 ### CU-38: Indexación automática de un documento subido
 
-- **Disparador:** Cualquier subida de documento (CU-17, CU-23, CU-31).
+- **Disparador:** Cualquier subida de documento (CU-17, CU-23, CU-31) o
+  página nueva encontrada por un rastreo de sitio web (CU-31a).
 - **Flujo principal:**
   1. Si es PDF/DOCX, se convierte a `.txt`; si es XLSX, cada hoja se
      procesa como una "página" (ver
-     [conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md)).
+     [conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md)). Una
+     página rastreada llega directo como texto plano (ya extraído por
+     `trafilatura`), sin pasar por esta conversión.
   2. El texto se divide en fragmentos (chunks) de 1000 caracteres con
      150 de traslape.
   3. Cada fragmento se convierte en un vector de 384 dimensiones
@@ -497,6 +590,25 @@ plano como parte del comportamiento normal del sistema.
   reiniciar el servidor ni ningún paso manual adicional.
 - **Referencia:** `app/rag/document_loader.py`, `app/rag/chunker.py`,
   [flujo-subida-documentos.md](flujo-subida-documentos.md).
+
+### CU-38a: Salto de reprocesamiento en un re-rastreo sin cambios
+
+- **Disparador:** Un rastreo de sitio web (CU-31a) vuelve a encontrar una
+  página que ya había indexado en una corrida anterior.
+- **Flujo principal:**
+  1. El sistema calcula el hash SHA-256 del contenido nuevo y lo compara
+     contra el que quedó registrado la vez anterior para ese mismo
+     archivo (`document_hashes`).
+  2. Si es idéntico, no reescribe el archivo ni recalcula embeddings --
+     la cuenta como "sin cambios" en el progreso del rastreo.
+  3. Si cambió, sigue el flujo normal de CU-38 y actualiza el hash
+     registrado.
+- **Motivo:** un rastreo se puede repetir muchas veces sobre el mismo
+  sitio; la mayoría de páginas no cambian entre una corrida y la
+  siguiente, así que recalcular sus embeddings sería trabajo repetido
+  sin ningún beneficio.
+- **Referencia:** `ingest_service.get_document_hash_by_filename`,
+  `app/services/crawl_job_service.py::_run_job`.
 
 ### CU-39: Detección de hostilidad y bloqueo temporal
 

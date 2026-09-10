@@ -25,6 +25,7 @@ exclusivamente en ese contexto — así evita inventar información.
 | **SQLite** | Base de datos del historial de conversaciones, sesiones, administradores, dependencias y FAQ — un solo archivo, sin necesidad de un servidor de base de datos aparte. |
 | **bcrypt** | Hashea las contraseñas de los administradores; nunca se guarda ni se transmite una contraseña en texto plano. |
 | **WebSockets** (nativo de FastAPI/Starlette) | Comunicación en tiempo real: el estudiante ve la respuesta del asesor al instante, y el panel de administración recibe nuevas conversaciones sin recargar la página. |
+| **tzdata** | Base de datos de zonas horarias para `zoneinfo` (estándar de Python) — le da al chatbot la fecha y hora reales de la institución (`America/Bogota`) para resolver preguntas relativas ("¿hoy hay clase de álgebra?"), funcionando igual sin importar el sistema operativo del servidor. |
 
 ## 3. Inteligencia artificial / pipeline RAG
 
@@ -36,6 +37,8 @@ exclusivamente en ese contexto — así evita inventar información.
 | **FAISS** (Facebook AI Similarity Search) | Base de datos vectorial: almacena los embeddings de todos los documentos e indexa la búsqueda semántica por similitud de significado, no por coincidencia exacta de palabras. |
 | **rank_bm25** (BM25Okapi) | Búsqueda léxica complementaria: encuentra coincidencias exactas de palabras que la búsqueda semántica a veces no distingue bien entre dos temas parecidos — ver [busqueda-lexica-bm25.md](busqueda-lexica-bm25.md). |
 | **Limitador de tasa propio** | Controla cuántas peticiones por minuto se le envían a Groq, para no exceder el límite del plan gratuito (30 peticiones/min) — las peticiones esperan su turno en vez de fallar. |
+| **Rastreador de sitios web propio** | Recorre una URL y sus enlaces internos para indexar automáticamente el contenido de un sitio completo, sin subir archivo por archivo — ver [flujo-subida-documentos.md](flujo-subida-documentos.md). |
+| **Caché de respuestas propia** | Reutiliza una respuesta ya generada cuando dos preguntas distintas recuperan exactamente el mismo contexto, ahorrando una llamada a Groq — ver [flujo-chat-en-vivo.md](flujo-chat-en-vivo.md). |
 
 ## 4. Frontend
 
@@ -51,12 +54,14 @@ exclusivamente en ese contexto — así evita inventar información.
 | **pypdf** | Extrae el texto de documentos PDF. |
 | **python-docx** | Extrae el texto de documentos Word (.docx). |
 | **openpyxl** | Extrae los datos de hojas de cálculo Excel (.xlsx) — cada fila se indexa como un registro independiente, para poder consultar un dato puntual (un horario, un salón). |
+| **trafilatura** | Extrae el contenido principal de una página web durante un rastreo de sitio — descarta menús de navegación, pie de página y banners, quedándose solo con el texto que de verdad importa. |
+| **beautifulsoup4** | Parsea el HTML de cada página rastreada para encontrar los enlaces internos que el rastreo debe seguir. |
 
 ## 6. Testing
 
 | Tecnología | Descripción corta para exponer |
 |---|---|
-| **pytest** | Framework de pruebas automatizadas; el proyecto tiene más de 115 pruebas que corren sin necesidad de una clave real de Groq (todo lo que llama al LLM se simula). |
+| **pytest** | Framework de pruebas automatizadas; el proyecto tiene 324 pruebas que corren sin necesidad de una clave real de Groq (todo lo que llama al LLM se simula). |
 | **httpx / TestClient** (FastAPI) | Permite probar los endpoints de la API completos (peticiones HTTP reales contra la app) dentro de las pruebas automatizadas. |
 
 ## 7. Infraestructura y despliegue

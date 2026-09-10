@@ -28,7 +28,7 @@ detallados, y guías para usuarios concretos.
   por SLA, subida e indexación de documentos, sugerencias de FAQ,
   moderación y el widget embebible.
 - **[diagrama-de-clases.md](diagrama-de-clases.md)** -- el modelo de
-  datos persistente real (las 16 tablas de `history.db` y sus
+  datos persistente real (las 17 tablas de `history.db` y sus
   relaciones) y los objetos en memoria del pipeline de documentos, en
   diagramas de clases (Mermaid).
 
@@ -70,7 +70,8 @@ detallados, y guías para usuarios concretos.
 
 - **[flujo-chat-en-vivo.md](flujo-chat-en-vivo.md)** -- qué pasa, paso a
   paso, desde que se envía una pregunta hasta que llega la respuesta
-  (streaming, Groq, métricas).
+  (streaming, Groq, métricas, reformulación de preguntas, caché de
+  respuestas y filtrado de fuentes realmente usadas).
 - **[flujo-escalamiento-y-atencion-humana.md](flujo-escalamiento-y-atencion-humana.md)**
   -- qué pasa, paso a paso, desde que un estudiante pide un asesor humano
   hasta que la conversación se resuelve: enrutamiento a dependencia,
@@ -78,7 +79,8 @@ detallados, y guías para usuarios concretos.
   de dónde sale el nombre real del asesor que ve el estudiante.
 - **[flujo-subida-documentos.md](flujo-subida-documentos.md)** -- qué
   pasa, paso a paso, desde que se sube un archivo hasta que queda
-  indexado y buscable.
+  indexado y buscable, incluida la vía alterna de indexar
+  automáticamente un sitio web completo (rastreo).
 - **[conceptos-chunks-y-faiss.md](conceptos-chunks-y-faiss.md)** --
   glosario: qué es un chunk, qué es la ingesta, qué hace FAISS y cómo, y
   dónde vive cada cosa (SQLite vs. archivos del índice vectorial).

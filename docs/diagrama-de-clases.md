@@ -8,7 +8,7 @@ con estado. Por eso este documento muestra las dos familias de "clases"
 que sí existen realmente en el código, en vez de inventar una jerarquía
 de objetos que no está ahí:
 
-1. **El modelo de datos persistente** -- las 16 tablas reales de
+1. **El modelo de datos persistente** -- las 17 tablas reales de
    `history.db`, que son, en la práctica, el verdadero modelo de dominio
    del sistema.
 2. **Los objetos en memoria del pipeline de documentos** -- los
@@ -121,12 +121,22 @@ classDiagram
         +int dependencia_id
         +string vigente_desde
         +string archived_at
+        +bool downloadable
+        +string source_url
         +string updated_at
     }
 
     class DocumentHash["DocumentHash (document_hashes)"] {
         +string content_hash
         +string filename
+        +string created_at
+    }
+
+    class CrawlPendingFile["CrawlPendingFile (crawl_pending_files)"] {
+        +int id
+        +string url
+        +string seed_url
+        +int dependencia_id
         +string created_at
     }
 
@@ -170,6 +180,7 @@ classDiagram
     Dependencia "1" --> "0..*" SesionEstudiante : dependencia_id
     Dependencia "1" --> "0..*" DocumentDependencia : dependencia_id
     Dependencia "1" --> "0..*" FaqCandidate : dependencia_id
+    Dependencia "1" --> "0..*" CrawlPendingFile : dependencia_id (opcional)
     Admin "1" --> "0..*" AdminSession : admin_id
     SesionEstudiante "1" --> "0..*" Turno : session_id
     SesionEstudiante "1" --> "0..*" MensajeAsesor : session_id
@@ -188,6 +199,20 @@ classDiagram
   `GroqCall`, `AnswerCache` y `DocumentHash` no tienen relación con
   ninguna otra tabla -- son configuración global o registros
   independientes, no datos por sesión ni por dependencia.
+- `CrawlPendingFile` tiene un `dependencia_id` opcional (la que se eligió
+  al lanzar ese rastreo), pero es puramente informativo -- no participa
+  del enrutamiento de preguntas como sí lo hace `DocumentDependencia`.
+  Cada fila es un PDF/DOCX/XLSX que un rastreo de sitio web (ver
+  [flujo-subida-documentos.md](flujo-subida-documentos.md)) encontró
+  pero no indexó automáticamente; desaparece cuando root la descarta,
+  no cuando se "resuelve" nada -- no hay un estado intermedio.
+- `downloadable` en `DocumentDependencia` es `1` (descargable) por
+  defecto; en `0`, el documento sigue indexado y respondiendo preguntas
+  normalmente, pero el estudiante no ve botón de descarga para él.
+  `source_url` es `NULL` para un documento subido a mano, y la URL real
+  de origen para uno que llegó vía un rastreo de sitio web -- en ese
+  caso, el estudiante ve un enlace a esa URL en vez de un botón de
+  descarga (no hay archivo "original" que servir).
 - El **contenido real de los documentos no vive aquí**: `DocumentDependencia`
   solo guarda la etiqueta de dependencia y el estado (vigente/archivado)
   de un archivo por su nombre -- los fragmentos de texto y sus vectores
@@ -257,9 +282,30 @@ classDiagram
         +acquire(estimated_tokens)
     }
 
+    class CrawledPage {
+        +string url
+        +string filename
+        +string text
+        +bytes content_bytes
+    }
+
+    class CrawlJobState {
+        +string job_id
+        +string seed_url
+        +string status
+        +int pages_indexed
+        +int pages_unchanged
+        +int pages_failed
+        +string current_url
+        +List~string~ skipped_binary_urls
+        +List~string~ errors
+        +bool cancel_requested
+    }
+
     LoadedDocument "1" *-- "1..*" PageText : pages
     LoadedDocument ..> Chunk : chunker.chunk_document()
     Chunk ..> RetrievedChunk : vector_store.query()
+    CrawledPage ..> Chunk : chunker.chunk_document()
 ```
 
 **Notas de lectura:**
@@ -281,6 +327,21 @@ classDiagram
   datos): una sola instancia por proceso, compartida por todas las
   funciones de `app/rag/llm.py` que llaman a Groq (ver
   `app/rag/rate_limiter.py`).
+- `CrawledPage` (`app/rag/web_crawler.py`) es análoga a `LoadedDocument`
+  pero para una página web: si es HTML, trae `text` (ya extraído por
+  `trafilatura`, sin menús ni pie de página) y pasa por el mismo
+  `chunker.chunk_document()` que cualquier otro documento; si es un
+  PDF/DOCX/XLSX enlazado, trae `content_bytes` en vez de `text` y **no**
+  se convierte en `Chunk` -- queda pendiente de subida manual (ver
+  `CrawlPendingFile` en la sección 1).
+- `CrawlJobState` (`app/services/crawl_job_service.py`) es el estado en
+  memoria de un rastreo en curso -- progreso consultable en vivo desde
+  el panel, cancelable a mitad de camino. A diferencia de todo lo demás
+  en esta sección, vive más que una sola operación puntual (un rastreo
+  real puede tomar minutos) pero tampoco se persiste: si el servidor se
+  reinicia a mitad de un rastreo, este objeto se pierde (las páginas ya
+  indexadas hasta ese momento no, ver
+  [flujo-subida-documentos.md](flujo-subida-documentos.md)).
 
 ## Y los ~50 esquemas de `app/models/schemas.py`
 

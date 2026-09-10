@@ -160,6 +160,13 @@ documentos directamente desde el panel, sin depender de root:
    ningún paso adicional para que el chatbot empiece a usarlo.
 4. **"Eliminar"**: quita el documento y su contenido del índice del
    chatbot de inmediato.
+5. **Columna "Descargable"**: un checkbox por documento (el tuyo, si eres
+   de dependencia; cualquiera, si eres general). Desmárcalo si quieres
+   que el chatbot lo siga usando para responder pero el estudiante ya no
+   pueda descargarlo — útil, por ejemplo, para un PDF con una imagen o
+   marca institucional desactualizada que igual sirve como fuente de
+   información. Volver a marcarlo lo hace descargable de nuevo en
+   cualquier momento; nunca afecta si el documento sigue indexado.
 
 ---
 
@@ -178,9 +185,10 @@ diferencias respecto a un administrador de dependencia normal:
   que su solicitud se sigue gestionando) — es un respaldo automático, no
   requiere ninguna acción manual.
 - En la pestaña **"Documentos"** (ver 2.7), el general tiene exactamente
-  las mismas capacidades que root: ve todos los documentos de todas las
-  dependencias, puede subir eligiendo cualquier dependencia (o dejarlo
-  general/compartido), recategorizar y eliminar cualquiera.
+  las mismas capacidades que root para subir, eliminar y recategorizar
+  documentos, y para marcar cualquiera como no descargable -- con la
+  única excepción de que **indexar un sitio web completo (ver 4.5) es
+  exclusivo de root**, el general no ve ese botón.
 - En la pestaña **"Dashboard"** (ver 2.6), el general ve los números
   agregados de todas las dependencias, con el desglose adicional por
   dependencia que un administrador de dependencia no ve.
@@ -256,7 +264,36 @@ secciones de conversaciones, documentos y FAQ.
   ningún paso adicional) — la respuesta puede tardar unos segundos
   mientras se procesa.
 - Puedes **recategorizar** (cambiar la dependencia de un documento ya
-  subido) o **eliminarlo** desde la tabla.
+  subido), marcarlo **no descargable** (ver 2.7, punto 5) o
+  **eliminarlo** desde la tabla.
+- **"+ Indexar sitio web"** (exclusivo de root): en vez de subir
+  archivos uno por uno, rastrea automáticamente una URL y las páginas
+  que encuentre enlazadas dentro del mismo sitio.
+  1. Ingresa la **URL inicial** (ej. la página de la facultad en el
+     sitio de la universidad).
+  2. Opcionalmente, una **ruta permitida** (si la dejas vacía, el
+     sistema la calcula solo a partir de la propia URL, para no salirse
+     "sin querer" a todo el dominio), la **profundidad máxima** de
+     enlaces a seguir (0-5) y el **máximo de páginas** (1-500).
+  3. Opcionalmente, una **dependencia** para etiquetar todo lo que se
+     indexe.
+  4. El sistema rastrea en segundo plano -- puede tardar varios minutos
+     en un sitio grande. Verás el progreso en vivo (páginas indexadas,
+     sin cambios, fallidas) y puedes **cancelarlo** en cualquier
+     momento. Si cierras la ventana de progreso, el rastreo sigue
+     corriendo igual en el servidor.
+  5. Las páginas indexadas así **no se pueden descargar** (no hay un
+     archivo, solo la página web) -- en el chat, el estudiante ve un
+     enlace que abre la página real en vez de un botón de descarga.
+  6. Volver a rastrear el mismo sitio no repite trabajo de más: una
+     página que no cambió desde la última vez se salta automáticamente.
+- **"Archivos pendientes de descarga manual"**: cuando un rastreo
+  encuentra un PDF, Word o Excel enlazado, no lo puede indexar solo --
+  aparece aquí con un enlace real (clicable, abre en pestaña nueva).
+  Descárgalo y súbelo con "+ Subir documento" si lo necesitas indexado,
+  o presiona **"Descartar"** para quitarlo de la lista sin subir nada.
+  Esta lista queda guardada aunque cierres la ventana o se reinicie el
+  servidor -- no se pierde como el progreso del rastreo en sí.
 
 ### 4.6 Pestaña "Preguntas frecuentes" (sugeridas automáticamente)
 
@@ -320,3 +357,9 @@ DOCX, XLSX).
 **El estudiante ve la pregunta que reescribí para consultar al asistente.**
 No — esa reescritura es privada del asesor; el estudiante solo ve lo que
 el asesor decide enviarle con el botón "Enviar" del campo de respuesta.
+
+**Rastreé un sitio web y me dijo que había PDFs pendientes de subir a
+mano, pero cerré la ventana y ya no sé dónde ver esa lista.**
+Está en la pestaña "Documentos" → sección "Archivos pendientes de
+descarga manual" (ver 4.5) -- queda guardada ahí de forma permanente,
+no depende de la ventana de progreso del rastreo.

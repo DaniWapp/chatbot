@@ -14,6 +14,10 @@ como referencia de arquitectura -- no implica ningún cambio de código.
   `dependencia` no ve ese selector -- el backend le fuerza siempre la suya.
 - En ambos casos es un `FormData` (multipart) con el archivo y, opcionalmente,
   `dependencia_id`.
+- **Root** tiene además una segunda vía de entrada, exclusiva suya: el
+  botón "+ Indexar sitio web" (mismo lugar que "+ Subir documento"), que no
+  sube un archivo sino que dispara un rastreo automático de una URL y sus
+  enlaces internos -- ver la sección 8 más abajo.
 
 ## 2. Ruta del backend -- `app/api/routes.py`
 
@@ -116,7 +120,11 @@ completamente local -- no llama a Groq ni a ninguna API externa.
 fragmentos creados, errores, y `final_filename` si el nombre cambió por la
 conversión o por una colisión). Si `final_filename` es distinto del nombre
 que el administrador subió, el frontend (`root.js`/`panel.js`) muestra una
-alerta indicando con qué nombre quedó guardado.
+alerta indicando con qué nombre quedó guardado. Esta respuesta es
+**síncrona** -- el navegador espera a que termine toda la ingesta. La vía
+alterna de la sección 8 (rastrear un sitio web completo) puede tomar
+minutos, así que en cambio responde de inmediato con un `job_id` y el
+progreso se consulta aparte.
 
 ## 7. Disponible de inmediato
 
@@ -125,3 +133,116 @@ No hace falta ningún paso extra: la siguiente pregunta que llegue al chat
 [flujo-chat-en-vivo.md](flujo-chat-en-vivo.md)) ya busca contra el índice
 FAISS actualizado, así que el documento recién subido puede aparecer como
 fuente desde la primera pregunta posterior a la subida.
+
+## 8. Vía alterna: rastreo automático de un sitio web
+
+En vez de subir archivo por archivo, root puede pedirle al sistema que
+recorra solo una URL y todas las que encuentre enlazadas dentro del mismo
+dominio y ruta -- útil para poblar el índice con el contenido público de
+la institución (ej. `unilibre.edu.co/cucuta`) sin descargar y subir cada
+página a mano. Exclusivo de root (`POST /api/root/crawl-site`, protegido
+con `require_root`) -- ni general ni dependencia lo ven en su panel.
+
+### 8.a Qué pide el formulario
+
+URL inicial (obligatoria), una ruta permitida opcional (si se deja vacía,
+`web_crawler.default_path_prefix` la deriva de la propia ruta de la URL
+inicial -- así un rastreo nunca se sale "sin querer" a todo el dominio),
+profundidad máxima de enlaces (0-5), máximo de páginas (1-500) y una
+dependencia opcional para etiquetar todo lo que se indexe.
+
+### 8.b El rastreo en sí -- `app/rag/web_crawler.py::crawl_site`
+
+Es un recorrido en anchura (BFS), página por página, con varias
+protecciones:
+
+- **Nunca sale del dominio+ruta permitida** (`is_allowed`) -- ni
+  subdominios, ni redes sociales, ni portales externos que la página
+  enlace, aunque el sitio real los tenga.
+- **Respeta `robots.txt`** (`RobotsCache`, un `urllib.robotparser` por
+  dominio) -- si el archivo no existe o no responde, asume que todo está
+  permitido en vez de bloquear el rastreo entero por un detalle del
+  servidor remoto.
+- Un segundo de espera entre petición y petición
+  (`REQUEST_DELAY_SECONDS`), para no saturar el servidor de la
+  institución.
+- El nombre de archivo de cada página sale de su propia URL
+  (`url_to_filename`, un slug estable) -- la misma URL rastreada dos
+  veces siempre produce el mismo nombre, así un segundo rastreo
+  **sobreescribe** la versión anterior de esa página en vez de
+  duplicarla.
+- Cada página HTML se pasa por `trafilatura.extract`, que se queda solo
+  con el contenido principal (descarta menús de navegación, pie de
+  página, banners) -- validado manualmente contra el sitio real de la
+  universidad antes de construir esta función.
+- Si un enlace apunta a un PDF/DOCX/XLSX (`BINARY_EXTENSIONS`), se
+  descarga su contenido crudo pero **no se indexa automáticamente** (ver
+  8.d) -- requeriría el mismo tratamiento de conversión que ya tiene la
+  subida manual (sección 3), y replicarlo aquí quedó fuera de alcance de
+  la primera versión de esta función.
+
+### 8.c Orquestación en segundo plano -- `app/services/crawl_job_service.py`
+
+`start_crawl_job` lanza un hilo (`daemon=True`) y devuelve un `job_id` de
+inmediato -- el navegador no espera a que termine. Ese hilo
+(`_run_job`) recorre el generador de `crawl_site` y, por cada página de
+texto:
+
+1. Calcula el hash SHA-256 de su contenido y lo compara contra
+   `ingest_service.get_document_hash_by_filename` (mismo mecanismo que
+   `document_hashes` ya usa para detectar contenido duplicado en la
+   subida manual). **Si es idéntico al de la última vez que se rastreó
+   esa misma página, se salta por completo** -- no reescribe el archivo
+   ni pasa por chunking/embeddings. Esto importa porque, a diferencia de
+   subir un archivo (una acción puntual), un rastreo se puede repetir
+   muchas veces sobre el mismo sitio, y la mayoría de páginas no cambian
+   entre una corrida y la siguiente.
+2. Si el contenido es nuevo o cambió, escribe el `.txt` en
+   `DOCUMENTS_DIR`, marca el documento con
+   `ingest_service.set_document_source_url` (la URL real, para que el
+   estudiante pueda abrirla) y `set_document_downloadable(False)` (ver
+   8.d), y llama a **la misma función de ingesta de la sección 5**
+   (`ingest_service.ingest_single_file`) -- el rastreo no duplica el
+   pipeline de chunking/embeddings/FAISS, lo reutiliza tal cual.
+3. Una página que falla (error de red, contenido vacío, etc.) se cuenta
+   como fallida y se sigue con la siguiente -- un solo error no aborta
+   el resto del rastreo.
+
+El progreso (`GET /api/root/crawl-site/{job_id}`) reporta, en vivo:
+páginas indexadas, páginas sin cambios (saltadas), páginas fallidas, la
+URL que se está procesando en ese momento, y la lista de errores. Root
+puede cancelarlo entre una página y la siguiente
+(`POST /api/root/crawl-site/{job_id}/cancel`). Este estado vive en
+memoria, no en la base de datos -- si el servidor se reinicia a mitad de
+un rastreo, las páginas ya indexadas quedan indexadas igual (se guardan
+de a una, no todas al final), pero el progreso en sí se pierde y root
+tendría que lanzarlo de nuevo.
+
+### 8.d Documentos rastreados: no descargables, con enlace a la fuente real
+
+Toda página indexada por un rastreo queda marcada `downloadable=False`
+(columna `document_dependencias.downloadable`) -- no existe un archivo
+"original" que ofrecer para descargar, solo la página web. En el chat del
+estudiante, cuando una de estas páginas aparece como fuente, en vez de un
+botón de descarga se muestra un enlace que abre la URL real
+(`document_dependencias.source_url`) en una pestaña nueva.
+
+Esta misma columna `downloadable` es independiente del rastreo -- ver
+[casos-de-uso.md](casos-de-uso.md) para el caso de un admin marcando a
+mano un documento subido normalmente como no descargable (ej. un PDF con
+una imagen institucional desactualizada que igual se quiere seguir
+usando como fuente de información).
+
+### 8.e PDF/Word/Excel enlazados: pendientes de descarga manual
+
+Cada archivo binario que el rastreo detecta (8.b) se guarda en la tabla
+`crawl_pending_files` (`url`, `seed_url`, `dependencia_id`,
+`created_at`) -- con `UNIQUE` en la URL, así que encontrarlo de nuevo en
+un rastreo posterior no genera una segunda entrada. En el panel root
+(pestaña Documentos) aparece una sección "Archivos pendientes de
+descarga manual" con el enlace real (clicable, abre en pestaña nueva)
+para que root lo descargue y lo suba a mano con "+ Subir documento" si
+lo necesita, y un botón para descartarlo de la lista sin subir nada.
+Esta lista **persiste en la base de datos** (no en el estado en memoria
+del job de 8.c), así que sigue disponible aunque se cierre el modal de
+progreso o se reinicie el servidor.

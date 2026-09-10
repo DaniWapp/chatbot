@@ -126,7 +126,10 @@ sudo apt install -y python3 python3-venv python3-pip git nginx certbot python3-c
 -- aunque el proyecto usa PyTorch por debajo (vía `sentence-transformers`),
 todas las dependencias pesadas ya vienen precompiladas para esta
 combinación de sistema operativo y Python, igual que se explicó en el
-paso 1.
+paso 1. Esto incluye `trafilatura` y `beautifulsoup4` (usadas por el
+rastreo de sitios web, ver [manual-usuario.md](manual-usuario.md)):
+verificado instalándolas de cero en el servidor real de producción
+(mismo Ubuntu 24.04 + Python 3.12) sin necesidad de compilador.
 
 ## 5. Clonar el repositorio
 
@@ -181,7 +184,7 @@ del servicio systemd (paso 12), no esta variable.
 venv/bin/python scripts/ingest.py
 ```
 
-Esto no depende de nada externo a GitHub: el repositorio ya incluye 3
+Esto no depende de nada externo a GitHub: el repositorio ya incluye 6
 documentos de ejemplo (marcados `_EJEMPLO`) que se descargaron solos con
 el `git clone` del paso 5. El comando los lee, los divide en fragmentos,
 genera sus vectores (embeddings) localmente y construye la base vectorial
@@ -201,8 +204,11 @@ esté completamente arriba (después del paso 14), se agregan **desde el
 navegador**, entrando al panel de administración en
 `https://tudominio.com/root` → pestaña **Documentos** → **Subir**. Subir
 un documento ahí ya dispara automáticamente su indexación -- no hace
-falta volver a entrar por SSH para eso. Ver
-[manual-usuario.md](manual-usuario.md) para el detalle de esa pantalla.
+falta volver a entrar por SSH para eso. La cuenta root también puede, en
+esa misma pestaña, indexar automáticamente el contenido público de un
+sitio web completo (botón "+ Indexar sitio web") en vez de subir archivo
+por archivo. Ver [manual-usuario.md](manual-usuario.md) para el detalle
+de esa pantalla.
 
 Este paso queda aquí solo como referencia de qué va a pasar más adelante;
 sigue con el paso 10 usando todavía los documentos de ejemplo.
@@ -429,18 +435,32 @@ DELETE FROM groq_calls;
 DELETE FROM answer_cache;
 DELETE FROM answer_feedback;
 DELETE FROM faq_candidates;
+DELETE FROM crawl_pending_files;
 "
 sudo systemctl start chatbot-facultad
 ```
 
-Esto vacía **únicamente** las tablas de conversación y métricas de uso.
-**No toca** la tabla `admins` (tu cuenta root sigue intacta), ni
-`dependencias`, `institution_settings`, `hostility_keywords`,
-`widget_allowed_origins`, `document_dependencias`, `document_hashes` ni
-`admin_sessions` -- es decir, ninguna cuenta, configuración institucional
-ni sesión de administrador activa se pierde. Ver
-[diagrama-de-clases.md](diagrama-de-clases.md) para el detalle completo
-de las 16 tablas de `history.db`.
+Esto vacía **únicamente** las tablas de conversación y métricas de uso
+(y la lista de archivos pendientes de un rastreo de prueba, si probaste
+esa función). **No toca** la tabla `admins` (tu cuenta root sigue
+intacta), ni `dependencias`, `institution_settings`,
+`hostility_keywords`, `widget_allowed_origins`, `document_dependencias`,
+`document_hashes` ni `admin_sessions` -- es decir, ninguna cuenta,
+configuración institucional ni sesión de administrador activa se
+pierde. Ver [diagrama-de-clases.md](diagrama-de-clases.md) para el
+detalle completo de las 17 tablas de `history.db`.
+
+> **Si probaste el rastreo de sitios web (paso 9) durante esta
+> instalación:** las páginas que indexó quedaron como archivos `.txt`
+> reales en `documents/` (con nombre `web-...`), con su propia fila en
+> `document_dependencias` -- el comando de arriba **no** las borra
+> (esa tabla se conserva a propósito). Si quieres empezar sin ese
+> contenido de prueba, bórralos igual que los `_EJEMPLO` antes de
+> volver a correr `scripts/ingest.py`:
+> ```bash
+> rm documents/web-*.txt
+> venv/bin/python scripts/ingest.py
+> ```
 
 ## 18. Mantenimiento: cómo actualizar el código más adelante
 

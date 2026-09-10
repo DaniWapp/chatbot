@@ -75,7 +75,11 @@ historial de la conversación ni se transmite a nadie por WebSocket -- el
 resultado vive solo en la respuesta HTTP de esta llamada. Es la
 diferencia clave frente a `reply`: nada de esto llega al estudiante a
 menos que el asesor copie el texto al campo de respuesta y presione
-"Enviar" (que sí pasa por el flujo de la sección 2).
+"Enviar" (que sí pasa por el flujo de la sección 2). Al reutilizar ese
+mismo pipeline, la respuesta sugerida al asesor también se beneficia del
+filtrado por fuentes realmente usadas (`FUENTES_USADAS`, ver
+[flujo-chat-en-vivo.md](flujo-chat-en-vivo.md)) -- no cita fragmentos que
+pasaron el re-ranking pero que el LLM no usó de verdad.
 
 ## 4. Quién ve y quién puede actuar sobre una conversación
 

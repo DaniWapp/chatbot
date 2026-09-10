@@ -26,7 +26,9 @@ más simple.
    cambiar una política es subir un documento desde `/root` o `/panel`,
    no editar un árbol de decisión ni reentrenar un modelo. La vigencia
    por documento (`app/rag/retriever.py::drop_superseded_by_vigencia`)
-   incluso resuelve sola cuál versión citar cuando hay varias.
+   incluso resuelve sola cuál versión citar cuando hay varias. Incluso se
+   puede alimentar de golpe con el contenido público de un sitio web
+   completo (rastreo automático), sin subir archivo por archivo.
 3. **Sabe decir "no sé"** -- reconoce explícitamente cuando no tiene
    información suficiente (`settings.NO_INFO_MESSAGE` +
    `has_sufficient_info`), en vez de forzar una respuesta genérica o

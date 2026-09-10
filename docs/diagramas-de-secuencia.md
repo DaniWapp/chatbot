@@ -19,6 +19,8 @@ imprescindible para leerlo.
 4. [El asesor le pide ayuda al chatbot (sin enviar nada al estudiante)](#4-el-asesor-le-pide-ayuda-al-chatbot-sin-enviar-nada-al-estudiante)
 5. [Redirección automática por SLA vencido](#5-redirección-automática-por-sla-vencido)
 6. [Subir e indexar un documento](#6-subir-e-indexar-un-documento)
+6a. [Indexar un sitio web (rastreo)](#6a-indexar-un-sitio-web-rastreo)
+6b. [Marcar un documento como no descargable](#6b-marcar-un-documento-como-no-descargable)
 7. [Generar y aceptar una sugerencia de FAQ](#7-generar-y-aceptar-una-sugerencia-de-faq)
 8. [Detección de hostilidad y bloqueo temporal](#8-detección-de-hostilidad-y-bloqueo-temporal)
 9. [Embeber el chat en un sitio externo (widget)](#9-embeber-el-chat-en-un-sitio-externo-widget)
@@ -38,6 +40,7 @@ sequenceDiagram
     participant FE as "Frontend (script.js)"
     participant API as "chat_service.stream_answer"
     participant RAG as "Retriever (FAISS + BM25 + re-ranking)"
+    participant Cache as "answer_cache_service"
     participant Groq
     participant DB as "SQLite (turns, chat_metrics)"
 
@@ -46,15 +49,30 @@ sequenceDiagram
     API->>API: needs_human(session_id)? -> No
     API->>RAG: retrieve_context(pregunta)
     RAG-->>API: fragmentos relevantes (sin Groq -- el re-ranking es el costo real)
-    API-->>FE: SSE "meta" {sources}
-    API->>Groq: chat.completions.create(stream=True)
-    loop cada fragmento de texto
-        Groq-->>API: delta
-        API-->>FE: SSE "delta" {text}
-        FE-->>Estudiante: repinta la burbuja (markdown)
+    opt sin resultados, o seguimiento corto con historial
+        API->>Groq: reformula/condensa la pregunta (rewrite_query_variations o condense_query_for_search)
+        Groq-->>API: variante(s)
+        API->>RAG: reintenta con la mejor variante
+        RAG-->>API: fragmentos relevantes (o los mismos de antes, si no mejora)
     end
-    API->>DB: record_chat_metrics + append_turn
-    API-->>FE: SSE "done" {suggestions, metrics}
+    API-->>FE: SSE "meta" {sources} (preliminar -- el paso "done" la reemplaza)
+    API->>Cache: try_get_cached_answer(context_hash)
+    alt hay respuesta cacheada para este contexto
+        Cache-->>API: texto ya generado
+        API-->>FE: SSE "delta" {text} (de una sola vez)
+    else sin caché
+        API->>Groq: chat.completions.create(stream=True)
+        loop cada fragmento de texto
+            Groq-->>API: delta
+            API-->>FE: SSE "delta" {text}
+            FE-->>Estudiante: repinta la burbuja (markdown)
+        end
+        API->>Cache: maybe_store_answer(context_hash, respuesta)
+    end
+    API->>API: extract_used_sources(respuesta) -- separa FUENTES_USADAS, filtra las fuentes
+    API->>DB: record_chat_metrics(..., cache_hit) + append_turn
+    API-->>FE: SSE "done" {sources filtradas, suggestions, metrics}
+    Note over FE: reemplaza las fuentes de "meta" por las de "done"
 ```
 
 ---
@@ -222,6 +240,88 @@ sequenceDiagram
     FAISS-->>API: persistido en index.faiss + metadata.json
     API-->>FE: IngestResponse (fragmentos creados, nombre final)
     Note over FAISS: el chatbot ya puede citar este documento<br/>desde la siguiente pregunta, sin pasos extra
+```
+
+Este mismo tramo (`Loader` opcional → `Chunker` → `Emb` → `FAISS`) es
+justo el que reutiliza el rastreo de sitio web (diagrama 6a) por cada
+página nueva o cambiada -- no es un pipeline aparte, es el mismo con
+otra fuente de entrada.
+
+---
+
+## 6a. Indexar un sitio web (rastreo)
+
+Ver [flujo-subida-documentos.md, sección 8](flujo-subida-documentos.md#8-vía-alterna-rastreo-automático-de-un-sitio-web)
+y CU-31a/CU-31b/CU-38a en [casos-de-uso.md](casos-de-uso.md). Exclusivo
+de root.
+
+```mermaid
+sequenceDiagram
+    actor Root
+    participant FE as "root.js (modal + polling)"
+    participant API as "POST /root/crawl-site"
+    participant Job as "crawl_job_service (hilo de fondo)"
+    participant Crawler as "web_crawler.crawl_site (BFS)"
+    participant Hash as "document_hashes (SHA-256)"
+    participant Ingest as "mismo pipeline del diagrama 6"
+    participant Pending as "SQLite (crawl_pending_files)"
+
+    Root->>FE: URL inicial, ruta permitida, profundidad, máx. páginas
+    FE->>API: POST /root/crawl-site
+    API->>Job: start_crawl_job(...) (hilo daemon)
+    API-->>FE: {job_id} (responde de inmediato, no espera)
+    loop por cada página encontrada (respeta robots.txt y dominio+ruta)
+        Job->>Crawler: siguiente página permitida
+        alt es PDF/DOCX/XLSX enlazado
+            Crawler-->>Job: content_bytes (no se indexa solo)
+            Job->>Pending: guarda url/seed_url/dependencia_id (UNIQUE en url)
+        else es una página HTML
+            Crawler-->>Job: texto (ya extraído por trafilatura)
+            Job->>Hash: ¿hash igual al de la última vez para este archivo?
+            alt sin cambios desde el último rastreo
+                Hash-->>Job: mismo hash -- se salta (pages_unchanged++)
+            else contenido nuevo o cambiado
+                Job->>Ingest: ingest_single_file (chunking + embeddings + FAISS)
+                Job->>Job: set_document_downloadable(False) + set_document_source_url
+                Job->>Hash: registra el hash nuevo
+                Ingest-->>Job: pages_indexed++
+            end
+        end
+        FE->>API: GET /root/crawl-site/{job_id} (polling cada 1.5s)
+        API-->>FE: progreso (indexadas, sin cambios, fallidas, url actual)
+    end
+    opt Root cancela a mitad de camino
+        FE->>API: POST /root/crawl-site/{job_id}/cancel
+        API->>Job: cancel_requested = true
+        Note over Job: termina después de la página en curso, no de golpe
+    end
+    Note over FE,Root: al cerrar el modal, el rastreo sigue corriendo en el servidor
+```
+
+---
+
+## 6b. Marcar un documento como no descargable
+
+Ver CU-18a/CU-23/CU-31 en [casos-de-uso.md](casos-de-uso.md).
+
+```mermaid
+sequenceDiagram
+    actor Admin as "Root / General / Dependencia (dueño)"
+    participant FE as "root.js / panel.js"
+    participant API as "PUT /root|admin/documents/{filename}/downloadable"
+    participant DB as "SQLite (document_dependencias.downloadable)"
+    actor Estudiante
+
+    Admin->>FE: Desmarca el checkbox "Descargable"
+    FE->>API: PUT .../downloadable {downloadable: false}
+    alt rol dependencia y el documento no es suyo
+        API-->>FE: 403 (no se toca nada)
+    else autorizado
+        API->>DB: set_document_downloadable(filename, false)
+        Note over DB: no reingesta -- el flag se consulta al vuelo,<br/>no queda "horneado" en los metadatos del chunk
+        API-->>FE: 200 OK
+    end
+    Note over Estudiante: la próxima vez que este documento aparezca<br/>como fuente, no se le ofrece botón de descarga<br/>(sigue siendo usado para responder igual)
 ```
 
 ---

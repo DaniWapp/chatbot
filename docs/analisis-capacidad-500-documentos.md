@@ -1,9 +1,14 @@
 # Análisis de capacidad: ¿sigue siendo viable con 500 documentos indexados?
 
-Este documento responde una pregunta hipotética concreta: si la
-institución sube 500 documentos (en vez de los que hay hoy), ¿el sistema
-sigue respondiendo rápido, y la memoria RAM alcanza? Es un análisis
-técnico basado en mediciones reales del sistema en producción, no en
+Este documento responde una pregunta concreta: si la institución llega a
+tener 500 documentos indexados (en vez de los que había al momento de
+medir), ¿el sistema sigue respondiendo rápido, y la memoria RAM alcanza?
+Ya no es un escenario puramente hipotético -- con la indexación
+automática de sitios web (ver
+[flujo-subida-documentos.md](flujo-subida-documentos.md)), un solo
+rastreo puede indexar hasta 500 páginas de golpe, así que llegar a ese
+volumen es un camino real, no solo teórico. Es un análisis técnico
+basado en mediciones reales del sistema en producción, no en
 estimaciones teóricas -- cada número está marcado como **medido** o
 **extrapolado** a partir de una medición real.
 
@@ -26,7 +31,12 @@ bytes → 92 fragmentos reales, medido en producción) da una razón de
 caracteres, con solapamiento). A 20 KB por archivo, eso da **~22
 fragmentos por archivo**.
 
-## Datos base medidos hoy en producción (17 archivos, 619 fragmentos)
+## Datos base medidos en producción el 2026-09-10 (17 archivos, 619 fragmentos)
+
+Punto en el tiempo, no una cifra que se mantenga fija -- el corpus real
+cambia con cada documento que se sube, se elimina o se rastrea. Sirve
+como línea base real para la extrapolación de abajo, no como el conteo
+actual del sistema.
 
 | Métrica | Valor medido |
 |---|---|
@@ -47,7 +57,14 @@ Esta es la parte que explica por qué el sistema sigue siendo viable a
   pequeña): el tamaño en disco/RAM de `index.faiss` y `metadata.json`,
   la búsqueda FAISS por pregunta, y la reconstrucción del índice léxico
   BM25 (que ocurre una vez por cada documento que se sube o modifica,
-  ver `app/rag/vector_store.py::_rebuild_bm25_index`).
+  ver `app/rag/vector_store.py::_rebuild_bm25_index`). Un rastreo de
+  sitio web grande concentra ese costo: puede disparar la reconstrucción
+  cientos de veces seguidas en minutos (una vez por página nueva o
+  cambiada) en vez de una vez cada tanto como con subidas manuales. Esto
+  se mitiga en parte con el mismo mecanismo del punto siguiente: una
+  página que no cambió desde el último rastreo (comparada por hash
+  SHA-256 contra `document_hashes`) se salta por completo, sin pagar
+  ningún costo de reingesta.
 - **NO escala con el corpus** (se mantiene constante): el re-ranking --
   el paso que de verdad domina el tiempo de respuesta de cada pregunta
   -- porque siempre trabaja sobre una cantidad fija de candidatos

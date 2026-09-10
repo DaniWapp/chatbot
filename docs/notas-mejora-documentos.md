@@ -112,6 +112,13 @@ solo se conservan los `.txt`. Implementado en
   agregar un consecutivo automático (`"Reporte.txt"` → `"Reporte (2).txt"`)
   en vez de sobreescribir, y avisa al administrador con qué nombre quedó
   guardado el archivo.
+- **Actualización posterior:** apareció un caso hermano del matiz 4 con
+  la indexación automática de sitios web -- ahí no hay ni siquiera un
+  `.txt` derivado de un archivo subido, solo el contenido de una página
+  real. Se resolvió mostrando un enlace a la página real (`source_url`)
+  en vez de cualquier nombre de archivo -- ver
+  [flujo-subida-documentos.md](flujo-subida-documentos.md) y CU-08 en
+  [casos-de-uso.md](casos-de-uso.md).
 
 Probado en vivo con un DOCX real (extremo a extremo: subida -> conversión
 -> el .docx no queda en el servidor -> el chatbot responde citando el
