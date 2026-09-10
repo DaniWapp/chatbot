@@ -35,6 +35,15 @@ def test_not_worth_condensing_a_short_greeting():
     assert chat_service._worth_condensing("hola") is False
 
 
+def test_short_question_looks_like_a_followup():
+    assert chat_service._looks_like_a_followup("qué precio tiene?") is True
+    assert chat_service._looks_like_a_followup("precio") is True
+
+
+def test_long_question_does_not_look_like_a_followup():
+    assert chat_service._looks_like_a_followup("una pregunta bastante completa y clara") is False
+
+
 # --- Integración: chat_service.answer_question ----------------------------
 
 
@@ -64,6 +73,59 @@ def test_followup_question_retries_with_rewritten_query(mock_retrieve, mock_gene
     assert response.has_sufficient_info is True
     assert len(response.sources) == 1
     assert response.sources[0].document == "doc.txt"
+
+
+@patch("app.services.chat_service.reranker.rerank", side_effect=_rerank_passthrough)
+@patch("app.rag.llm.rewrite_query_variations")
+@patch("app.rag.llm.generate_answer")
+@patch("app.services.chat_service.retrieve_context")
+def test_short_followup_retries_even_when_first_try_found_noise(mock_retrieve, mock_generate, mock_rewrite, mock_rerank):
+    """Caso real reportado: 'qué precio tiene?' tras hablar de una carrera
+    encontró 1 fragmento de puro ruido (no cero) -- antes de este cambio
+    eso bloqueaba la reformulación con historial por completo, porque el
+    disparador solo miraba si la búsqueda encontró CERO resultados."""
+    unique = uuid.uuid4().hex
+    session_id = f"s-followup-noise-{unique}"
+    history_service.append_turn(session_id, "¿Existe la carrera de Ingeniería en TIC?", "Sí, existe.")
+
+    noise_chunk = _chunk(f"noise-{unique}", f"Fila de una matriz bibliográfica sin relación ({unique}).")
+    real_chunk = _chunk(f"tic-{unique}", f"El precio de Ingeniería en TIC es X ({unique}).")
+    mock_retrieve.side_effect = [([noise_chunk], 1.0), ([real_chunk], 2.0)]
+    mock_rewrite.return_value = ["precio de Ingeniería en TIC"]
+    mock_generate.return_value = f"El precio es X ({unique})."
+
+    response = chat_service.answer_question(session_id, "qué precio tiene?")
+
+    assert mock_retrieve.call_count == 2
+    mock_rewrite.assert_called_once()
+    assert real_chunk.text in mock_generate.call_args.args[1]
+    assert noise_chunk.text not in mock_generate.call_args.args[1]
+    assert response.has_sufficient_info is True
+
+
+@patch("app.services.chat_service.reranker.rerank", side_effect=_rerank_passthrough)
+@patch("app.rag.llm.rewrite_query_variations")
+@patch("app.rag.llm.generate_answer")
+@patch("app.services.chat_service.retrieve_context")
+def test_short_followup_keeps_original_result_if_rewrite_finds_nothing_better(
+    mock_retrieve, mock_generate, mock_rewrite, mock_rerank
+):
+    """Si la reformulación no encuentra nada mejor, se conserva el
+    resultado original -- nunca deja la búsqueda peor de lo que ya
+    estaba, incluso si ese original era ruido."""
+    unique = uuid.uuid4().hex
+    session_id = f"s-followup-nogain-{unique}"
+    history_service.append_turn(session_id, "¿Existe la carrera de Ingeniería en TIC?", "Sí, existe.")
+
+    noise_chunk = _chunk(f"noise-{unique}", f"Fila sin relación ({unique}).")
+    mock_retrieve.side_effect = [([noise_chunk], 1.0), ([], 2.0)]
+    mock_rewrite.return_value = ["precio de Ingeniería en TIC"]
+    mock_generate.return_value = f"No encontré nada útil ({unique})."
+
+    chat_service.answer_question(session_id, "qué precio tiene?")
+
+    assert mock_retrieve.call_count == 2
+    assert noise_chunk.text in mock_generate.call_args.args[1]
 
 
 @patch("app.services.chat_service.reranker.rerank", side_effect=_rerank_passthrough)

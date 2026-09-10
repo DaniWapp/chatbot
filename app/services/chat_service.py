@@ -50,6 +50,27 @@ def _worth_condensing(question: str) -> bool:
     return len(question.split()) >= _MIN_WORDS_FOR_CONDENSATION
 
 
+# Un seguimiento corto ("precio", "¿y el costo?") con conversación previa
+# es sospechoso de ser elíptico -- depende del tema de turnos anteriores.
+# Caso real que motivó esto: "qué precio tiene?" tras hablar de una
+# carrera encontró 1 fragmento (no cero) de puro ruido -- una fila suelta
+# de una matriz bibliográfica sin ninguna relación, que pasó
+# RERANK_MIN_SCORE por casualidad (confianza real medida: 0.10). Como el
+# disparador solo miraba si la búsqueda encontró CERO resultados, ese
+# ruido no vacío bloqueaba por completo la reformulación con historial,
+# aunque el caso es exactamente el que existe para resolver. Por eso
+# ahora también se intenta reformular cuando la pregunta es corta y hay
+# historial, sin importar si la búsqueda con el mensaje tal cual ya trajo
+# algo -- si ese algo era en realidad mejor, la reformulación no lo pierde
+# (ver _try_multi_query_rewrite: solo reemplaza el resultado si encuentra
+# algo que sí pasa el re-ranking, nunca lo empeora).
+_MAX_WORDS_FOR_FOLLOWUP_EXPANSION = 5
+
+
+def _looks_like_a_followup(question: str) -> bool:
+    return len(question.split()) <= _MAX_WORDS_FOR_FOLLOWUP_EXPANSION
+
+
 def _filter_chunks_by_used_sources(
     chunks: List[RetrievedChunk], used_document_names: Optional[List[str]]
 ) -> List[RetrievedChunk]:
@@ -142,9 +163,9 @@ def _try_multi_query_rewrite(
     conversation_history: List[Tuple[str, str]],
     dependencia_id: Optional[int] = None,
 ) -> Tuple[List[RetrievedChunk], str, float]:
-    """Si _needs_query_rewrite decide que hace falta (la búsqueda con el
-    mensaje tal cual no encontró nada), pide reformulaciones autónomas de
-    la pregunta (multi-query retrieval: distintas formulaciones pueden
+    """Si la búsqueda con el mensaje tal cual no encontró nada, o parece
+    un seguimiento corto que depende del historial, pide reformulaciones
+    autónomas de la pregunta (multi-query retrieval: distintas formulaciones pueden
     coincidir con fragmentos distintos del índice) y busca con cada una,
     combinando los fragmentos sin duplicar por chunk_id y re-rankeando el
     conjunto combinado una vez más para quedarse con los TOP_K realmente
@@ -155,21 +176,30 @@ def _try_multi_query_rewrite(
     - Con historial: EXPANDE la pregunta incorporando el tema implícito
       de turnos anteriores (llm.rewrite_query_variations) -- caso
       original: un seguimiento corto como "precio" tras hablar de
-      "Ingeniería en TIC".
+      "Ingeniería en TIC". Se intenta si la búsqueda no encontró nada, O
+      si la pregunta es corta (_looks_like_a_followup) aunque sí haya
+      encontrado algo -- caso real: "qué precio tiene?" encontró 1
+      fragmento de puro ruido (una fila de una matriz bibliográfica) en
+      vez de cero, lo que antes bloqueaba la reformulación por completo.
     - Sin historial: CONDENSA la pregunta tal cual, quitando rodeos y
       cortesías que diluyen el embedding (llm.condense_query_for_search)
       -- caso real verificado: una pregunta con cortesías/dudas no pasa
       el umbral de relevancia por sí sola aunque el tema sí esté en los
-      documentos. Solo se intenta si la pregunta tiene un tamaño mínimo
-      (_worth_condensing) -- un saludo corto sin historial legítimamente
-      no encuentra nada, y no vale la pena gastar una llamada a Groq ahí.
+      documentos. Solo se intenta si la búsqueda no encontró nada Y la
+      pregunta tiene un tamaño mínimo (_worth_condensing) -- un saludo
+      corto sin historial legítimamente no encuentra nada, y no vale la
+      pena gastar una llamada a Groq ahí.
 
     Devuelve (chunks, pregunta_para_retrieval_y_caché, retrieval_ms ya
     incluyendo el costo de esto). Si no hacía falta reformular, o ninguna
     variación encontró nada mejor, devuelve los chunks y la pregunta
     original sin cambios -- nunca deja la búsqueda peor de lo que ya
-    estaba."""
-    if not _needs_query_rewrite(chunks):
+    estaba (la reformulación solo REEMPLAZA el resultado si encuentra algo
+    que sí pasa el re-ranking, ver más abajo)."""
+    needs_retry = _needs_query_rewrite(chunks) or (
+        bool(conversation_history) and _looks_like_a_followup(question)
+    )
+    if not needs_retry:
         return chunks, question, retrieval_ms
 
     if not conversation_history and not _worth_condensing(question):
