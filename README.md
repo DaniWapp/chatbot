@@ -213,7 +213,7 @@ GROQ_API_KEY=tu_clave_aqui
 ### 6.5. Agregar documentos
 
 Coloca tus archivos PDF, DOCX, TXT o XLSX dentro de la carpeta `documents/`. El
-proyecto ya incluye 3 documentos de **ejemplo** (marcados como
+proyecto ya incluye 6 documentos de **ejemplo** (marcados como
 `_EJEMPLO`) para poder probar el sistema de inmediato; reemplázalos o
 complétalos con los documentos oficiales reales de tu institución.
 
@@ -257,6 +257,87 @@ http://localhost:8000/docs
 > ¿Vas a desplegar esto en un servidor Linux (VPS o físico)? Ver
 > [docs/instalacion-linux.md](docs/instalacion-linux.md) -- guía paso a
 > paso por SSH, con systemd, nginx y HTTPS.
+
+### 6.10. Acceder desde otros dispositivos de la red local (opcional)
+
+Los pasos anteriores dejan el chatbot funcionando en `http://localhost:8000`
+desde la propia máquina donde corre el servidor. Si además necesitas
+abrirlo desde otro computador o celular conectado a la misma red (por
+ejemplo, para que varias personas de una oficina lo prueben sin
+instalar nada), sigue estos pasos en orden -- cada uno depende del
+anterior, así que no te saltes ninguno.
+
+**1. Si el servidor es una máquina virtual, confirma que su adaptador de
+red esté en modo puente (bridged), no NAT.**
+
+Con NAT (el modo por defecto en VirtualBox y VMware), la máquina virtual
+vive en una red privada que **solo el equipo anfitrión puede ver** --
+ninguna otra máquina de tu red podrá llegar a su IP sin importar qué más
+configures. Con puente (bridged), la VM tiene presencia real en la red
+local, como si fuera un equipo físico más.
+
+- **VirtualBox**: Configuración de la VM → **Red** → Adaptador 1 →
+  "Conectado a": **Adaptador puente**.
+- **VMware Workstation/Player**: Editar configuración de la máquina
+  virtual → **Red** → **Bridged (Puente)**.
+- **Hyper-V**: Configuración de la VM → Adaptador de red → conéctalo a
+  un **conmutador virtual externo** (no uno interno/privado).
+
+> Después de cambiar el modo de red, la VM puede recibir una IP nueva --
+> repite el paso 2 después de este cambio.
+
+**2. Obtén la IP local real del servidor.**
+
+En una terminal de Windows, dentro del servidor:
+```powershell
+ipconfig
+```
+Busca "Dirección IPv4" del adaptador de red activo (ej. `192.168.1.50`).
+
+**3. Permite el puerto 8000 en el Firewall de Windows Defender.**
+
+Opción rápida, en una terminal **como administrador**:
+```powershell
+netsh advfirewall firewall add rule name="Chatbot Facultad (8000)" dir=in action=allow protocol=TCP localport=8000
+```
+
+O por la interfaz gráfica: Panel de control → Firewall de Windows
+Defender → Configuración avanzada → Reglas de entrada → Nueva regla →
+**Puerto** → TCP, puerto específico `8000` → Permitir la conexión →
+marca al menos el perfil **Privado** (el que Windows asigna a redes de
+confianza, como la de una oficina) → dale un nombre y termina.
+
+**4. Agrega esa IP a `ALLOWED_ORIGINS` en tu `.env`.**
+
+El chat en vivo y el panel de administración usan WebSockets que
+verifican de dónde viene cada conexión -- sin este paso, la página
+carga, pero el panel y las notificaciones en tiempo real no funcionan.
+Abre `.env` y agrega la IP del paso 2 (con el mismo puerto):
+```
+ALLOWED_ORIGINS=http://localhost:8000,http://192.168.1.50:8000
+```
+**Reinicia el servidor** para que tome el cambio (cierra la ventana de
+`iniciar.bat` y vuelve a abrirlo) -- las variables de `.env` solo se
+leen al arrancar.
+
+> **Nota:** aunque `.env` trae `BACKEND_HOST=0.0.0.0`, esa variable no
+> controla nada en la práctica -- `iniciar.bat` ya arranca el servidor
+> con `--host 0.0.0.0` fijo (escuchando en todas las redes), así que no
+> hace falta tocarla. El problema real casi siempre es
+> `ALLOWED_ORIGINS`, el firewall, o el modo de red de la VM.
+
+**5. Prueba desde otro dispositivo** conectado a la misma red: abre
+`http://<IP-del-servidor>:8000` en el navegador. Debe cargar el chat, y
+el panel (`/panel`, `/root`) debe actualizarse en tiempo real igual que
+desde `localhost`.
+
+**Si sigue sin funcionar**, revisa en este orden:
+1. ¿El otro dispositivo está en la misma red? (`ping` a la IP del
+   servidor desde ahí -- si no responde, es un problema de red/VM, no
+   del proyecto).
+2. ¿El adaptador de la VM quedó en modo puente (paso 1)?
+3. ¿La regla de firewall se creó en el perfil de red correcto (paso 3)?
+4. ¿Reiniciaste el servidor después de editar `.env` (paso 4)?
 
 ## 7. Panel de administración y sistema de roles
 
@@ -382,9 +463,14 @@ completa y sus valores por defecto):
   `HISTORY_BACKUP_RETENTION`: respaldo periódico de `history.db`.
 - `AUTO_ESCALATION_TIMEOUT_SECONDS`, `AUTO_ESCALATION_CHECK_INTERVAL_SECONDS`:
   SLA de auto-escalación al administrador general (ver 7.3).
-- `BACKEND_HOST`, `BACKEND_PORT`: dónde corre el servidor.
+- `BACKEND_HOST`, `BACKEND_PORT`: documentan dónde está pensado que corra
+  el servidor, pero hoy **no los lee `iniciar.bat` ni
+  `scripts/run_server.ps1`** (ambos arrancan uvicorn con `--host
+  0.0.0.0 --port 8000` fijos en el comando) -- cambiarlos en `.env` no
+  tiene efecto a menos que edites también esos scripts.
 - `DOCUMENTS_DIR`, `VECTOR_DB_DIR`, `MAX_FILE_SIZE_MB`: manejo de documentos.
-- `ALLOWED_ORIGINS`: orígenes permitidos por CORS.
+- `ALLOWED_ORIGINS`: orígenes permitidos por CORS (ver sección 6.10 para
+  cómo usarlo al acceder desde otro dispositivo de la red local).
 - `CHAT_RATE_LIMIT_MAX`/`_WINDOW_SECONDS`: límite de peticiones al chat por IP.
 - `LOGIN_RATE_LIMIT_MAX`/`_WINDOW_SECONDS`: límite de intentos de login por IP
   (freno a fuerza bruta).
