@@ -339,6 +339,38 @@ desde `localhost`.
 3. ¿La regla de firewall se creó en el perfil de red correcto (paso 3)?
 4. ¿Reiniciaste el servidor después de editar `.env` (paso 4)?
 
+### 6.11. Actualizar el proyecto a una versión más reciente
+
+Cuando haya cambios nuevos en el repositorio de GitHub (correcciones,
+funciones nuevas), para traerlos a tu instalación:
+
+1. **Detén el servidor** si está corriendo: ve a la ventana donde está
+   abierto `iniciar.bat` y presiona **Ctrl+C**, o simplemente ciérrala.
+2. **Trae los cambios**, desde una terminal en la carpeta del proyecto:
+   ```powershell
+   git pull origin master
+   ```
+   > Si descargaste el proyecto como un `.zip` desde GitHub en vez de
+   > clonarlo con `git clone`, este comando no funcionará -- en ese caso
+   > tienes que descargar el `.zip` actualizado de nuevo y reemplazar los
+   > archivos manualmente (con cuidado de no borrar tu `.env`,
+   > `documents/` ni `vector_db/`, que no vienen en el repositorio).
+3. **Si el cambio agregó alguna dependencia nueva** (se nota porque
+   `requirements.txt` aparece modificado en la salida del `git pull`),
+   instálala:
+   ```powershell
+   venv\Scripts\python.exe -m pip install -r requirements.txt
+   ```
+   Si no hubo cambios en `requirements.txt`, puedes saltarte este paso.
+4. **Vuelve a iniciar el backend** (doble clic en `iniciar.bat`, o el
+   comando del paso 6.7) -- esto es necesario siempre que el cambio haya
+   tocado código Python (`app/`), para que el proceso cargue la versión
+   nueva. Si el cambio fue solo de documentación o de frontend
+   (`frontend/*.html`, `.js`, `.css`), ni siquiera hace falta
+   reiniciar -- el navegador los recarga directo con F5.
+5. No hace falta volver a correr `ingestar.bat` ni crear la cuenta root
+   de nuevo -- tus documentos, el índice y las cuentas ya existentes no
+   se ven afectados por actualizar el código.
 ## 7. Panel de administración y sistema de roles
 
 Además del chat para estudiantes, el proyecto incluye un panel de
