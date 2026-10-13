@@ -144,6 +144,11 @@ def _run_job(
         ):
             with _lock:
                 job.current_url = page.url
+            if page.error is not None:
+                with _lock:
+                    job.pages_failed += 1
+                    job.errors.append(f"{page.url}: {page.error}")
+                continue
             if page.content_bytes is not None:
                 with _lock:
                     job.skipped_binary_urls.append(page.url)

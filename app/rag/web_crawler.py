@@ -57,14 +57,20 @@ def is_placeholder_text(text: str) -> bool:
 
 @dataclass
 class CrawledPage:
-    """Una página HTML ya extraída (text) o un archivo binario descargado
-    tal cual (content_bytes), listo para pasar por el pipeline de
-    ingesta existente. Exactamente uno de los dos viene con datos."""
+    """Una página HTML ya extraída (text), un archivo binario descargado
+    tal cual (content_bytes), o una URL que no se pudo descargar en
+    absoluto (error) -- ej. el sitio no responde, falla DNS, certificado
+    HTTPS inválido, 404/500, etc. Exactamente uno de los tres viene con
+    datos; nunca se descarta un fallo de red en silencio, porque de lo
+    contrario un rastreo que no logra conectarse con nada (ej. el
+    servidor no tiene salida a internet) termina reportando "0 páginas,
+    0 errores" -- indistinguible de un sitio real sin contenido."""
 
     url: str
     filename: str
     text: Optional[str] = None
     content_bytes: Optional[bytes] = None
+    error: Optional[str] = None
 
 
 def normalize_url(url: str) -> str:
@@ -193,7 +199,8 @@ def crawl_site(
             try:
                 response = client.get(url)
                 response.raise_for_status()
-            except Exception:
+            except Exception as exc:
+                yield CrawledPage(url=url, filename=url_to_filename(url), error=str(exc))
                 continue
 
             path_lower = urlparse(url).path.lower()

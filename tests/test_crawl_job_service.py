@@ -145,6 +145,29 @@ def test_run_job_continues_after_a_single_page_failure(mock_crawl, mock_embed, m
 
 
 @patch("app.rag.web_crawler.crawl_site")
+def test_run_job_reports_network_error_instead_of_finishing_silently(mock_crawl, tmp_path, monkeypatch):
+    """Caso real reportado: un servidor sin salida a internet terminaba
+    el rastreo con "0 páginas, 0 errores" -- indistinguible de un sitio
+    sin contenido. Ahora el fallo de red debe quedar visible en errors."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENTS_DIR", tmp_path)
+    mock_crawl.return_value = iter(
+        [CrawledPage(url="https://sitio.edu/cucuta", filename="web-cucuta.txt", error="Connection refused")]
+    )
+
+    job_id = crawl_job_service.start_crawl_job(
+        "https://sitio.edu/cucuta/", allowed_path_prefix="/cucuta", max_depth=1, max_pages=10, dependencia_id=None
+    )
+    status = _wait_until_finished(job_id)
+
+    assert status["status"] == "done"
+    assert status["pages_indexed"] == 0
+    assert status["pages_failed"] == 1
+    assert status["errors"] == ["https://sitio.edu/cucuta: Connection refused"]
+
+
+@patch("app.rag.web_crawler.crawl_site")
 def test_run_job_reports_error_status_when_crawl_itself_fails(mock_crawl, tmp_path, monkeypatch):
     from app.config import settings
 

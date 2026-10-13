@@ -191,6 +191,19 @@ protecciones:
   8.d) -- requeriría el mismo tratamiento de conversión que ya tiene la
   subida manual (sección 3), y replicarlo aquí quedó fuera de alcance de
   la primera versión de esta función.
+- **Si una página no se puede descargar en absoluto** (el servidor no
+  responde, falla la resolución DNS, el certificado HTTPS es inválido,
+  HTTP 404/500, etc.), el error queda registrado -- **nunca se descarta
+  en silencio.** Caso real que motivó esto: un servidor sin salida a
+  internet terminaba un rastreo reportando "0 páginas, 0 errores,
+  listo", exactamente igual que si el sitio no tuviera contenido --
+  imposible de diagnosticar desde el panel. Ahora cada fallo de este
+  tipo cuenta como página fallida y su mensaje real (ej. "nombre o
+  servicio desconocido", "conexión rechazada") aparece en la lista de
+  errores del progreso del rastreo -- si *todas* las páginas fallan con
+  el mismo tipo de error, es una señal clara de que el servidor no tiene
+  salida a internet o hay un firewall/proxy de por medio, no de que el
+  sitio esté vacío.
 
 ### 8.c Orquestación en segundo plano -- `app/services/crawl_job_service.py`
 

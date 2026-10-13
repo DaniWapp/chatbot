@@ -231,6 +231,36 @@ def test_crawl_site_skips_placeholder_pages_but_still_follows_their_links(mock_e
     assert "https://sitio.edu/cucuta/pagina-real" in urls
 
 
+class _RaisingClient:
+    """Simula que CADA petición falla a nivel de red (sin salida a
+    internet, DNS roto, certificado inválido, etc.) -- a diferencia de
+    _FakeClient, que simula un 404 puntual (un enlace roto), esto simula
+    que el sitio es enteramente inalcanzable."""
+
+    def __init__(self, exc: Exception):
+        self.exc = exc
+
+    def get(self, url):
+        raise self.exc
+
+    def close(self):
+        pass
+
+
+def test_crawl_site_yields_error_page_instead_of_failing_silently():
+    """Antes, cualquier excepción al pedir una página se descartaba con
+    un `continue` silencioso -- un rastreo contra un servidor sin salida
+    a internet terminaba reportando "0 páginas, 0 errores", exactamente
+    igual que un sitio real sin contenido. Ahora debe quedar visible."""
+    client = _RaisingClient(ConnectionError("[Errno 11001] getaddrinfo failed"))
+    pages = list(web_crawler.crawl_site("https://sitio.edu/cucuta/", max_depth=0, max_pages=10, client=client))
+    assert len(pages) == 1
+    assert pages[0].url == "https://sitio.edu/cucuta"
+    assert pages[0].text is None
+    assert pages[0].content_bytes is None
+    assert "getaddrinfo failed" in pages[0].error
+
+
 # --- RobotsCache -------------------------------------------------------------
 
 

@@ -477,6 +477,11 @@ Adicional y exclusivo de root:
   extraído es texto de relleno ("Lorem ipsum...") casi desde el inicio,
   la página no se indexa -- sus enlaces sí se siguen igual, por si
   llevan a contenido real (`web_crawler.is_placeholder_text`).
+- **Flujo alterno D -- una página no se puede descargar:** cualquier
+  error real (red, DNS, HTTPS, 404/500) queda registrado como página
+  fallida con su mensaje real, nunca se descarta en silencio -- si todo
+  el rastreo falla con el mismo error, es señal de que el servidor no
+  tiene salida a internet, no de que el sitio esté vacío.
 - **Postcondición:** El chatbot puede usar el contenido rastreado desde
   la primera pregunta posterior, igual que con una subida manual.
 - **Referencia:** `POST /api/root/crawl-site`,
