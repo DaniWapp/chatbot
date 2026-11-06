@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asistente Institucional — Feria</title>
+<style>
+  /*
+    Dirección: la marca visual real del producto (frontend/style.css del
+    propio proyecto) -- violeta #5b21b6 / #2e1065 sobre blanco, radio de
+    esquina 12px, sombras suaves, tipografía del sistema. Nada inventado:
+    son los mismos tokens que ya usan el chat y los paneles reales.
+    Iconos propios (burbuja de chat, lupa, documento, escudo) con formas
+    llenas, no líneas sueltas -- para que se vean como ilustraciones
+    reales, no como un esquema técnico minimalista.
+
+    Estructura narrativa (restructurada completa): Apertura (3) ->
+    INDEXAR, paso a paso 1-3 (archivo, chunks, vector) -> transición ->
+    PREGUNTAR, paso a paso 4-7 (comparar, buscar, verificar, responder)
+    -> Arquitectura/Resultados/Cierre. Un solo hilo de pasos 1..7, sin
+    duplicar ejemplos: el caso real "cálculo diferencial vs álgebra
+    lineal" se insinúa una vez (paso 3) y se resuelve con números reales
+    una sola vez (paso 5), no dos.
+  */
+  :root {
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --border: #ebebea;
+    --text: #1a1a1a;
+    --text-muted: #6b6b6b;
+    --text-faint: #9b9a97;
+    --accent-dark: #2e1065;
+    --accent: #5b21b6;
+    --accent-soft: #e3d2fa;
+    --radius: 12px;
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141217;
+      --surface: #1c1922;
+      --border: #2d2836;
+      --text: #f1eef7;
+      --text-muted: #b2a9c4;
+      --text-faint: #8a7fa0;
+      --accent-dark: #c9b6f0;
+      --accent: #a78bfa;
+      --accent-soft: #2a2140;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141217;
+    --surface: #1c1922;
+    --border: #2d2836;
+    --text: #f1eef7;
+    --text-muted: #b2a9c4;
+    --text-faint: #8a7fa0;
+    --accent-dark: #c9b6f0;
+    --accent: #a78bfa;
+    --accent-soft: #2a2140;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 12% -8%, var(--accent-soft), transparent 42%),
+      radial-gradient(circle at 100% 108%, var(--accent-soft), transparent 46%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    overflow: hidden;
+  }
+
+  .gutter { padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+
+  .deck { position: relative; height: 100%; width: 100%; }
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    padding-top: max(44px, env(safe-area-inset-top, 0px) + 28px);
+    padding-bottom: max(80px, env(safe-area-inset-bottom, 0px) + 64px);
+    overflow-y: auto;
+  }
+  .slide.active { display: flex; }
+  .frame { max-width: 680px; width: 100%; }
+  .frame-wide { max-width: 920px; }
+  .frame-split { max-width: 1080px; }
+
+  /* ---------- diseño partido: texto + ilustración grande ---------- */
+  .split {
+    display: flex; align-items: center; gap: 48px; flex-wrap: wrap-reverse;
+  }
+  .split-text { flex: 1 1 380px; min-width: 0; }
+  .split-art { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+  .blob {
+    position: relative;
+    width: 260px; height: 260px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .blob::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: var(--accent-soft);
+    border-radius: 42% 58% 55% 45% / 48% 42% 58% 52%;
+  }
+  .blob svg { position: relative; width: 56%; height: 56%; }
+  @media (max-width: 760px) {
+    .blob { width: 180px; height: 180px; }
+  }
+
+  /* portada: escena más ancha que alta (documentos -> lupa -> respuesta) */
+  .blob-hero { width: 380px; height: 260px; }
+  .blob-hero svg { width: 78%; height: 78%; }
+  @media (max-width: 900px) {
+    .blob-hero { width: 300px; height: 210px; }
+  }
+  @media (max-width: 760px) {
+    .blob-hero { width: 260px; height: 190px; }
+  }
+
+  h1, h2 { font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; color: var(--text); }
+  h1 { font-size: clamp(30px, 5.6vw, 48px); line-height: 1.12; }
+  h2 { font-size: clamp(22px, 4vw, 32px); line-height: 1.2; margin-bottom: 8px; }
+
+  p.lede { font-size: clamp(15px, 1.8vw, 18px); color: var(--text-muted); max-width: 56ch; line-height: 1.6; margin: 16px 0 0; }
+  p.hint { font-size: 13.5px; color: var(--text-faint); margin-top: 10px; }
+
+  .eyebrow { font-size: 13px; font-weight: 600; color: var(--accent); margin: 0 0 12px; }
+  .eyebrow .part { color: var(--text-faint); font-weight: 600; }
+
+  .pill { display: inline-block; font-size: 12.5px; color: var(--accent-dark); background: var(--accent-soft); border-radius: 999px; padding: 5px 13px; margin-top: 22px; }
+
+  .rag-mark { margin-bottom: 18px; }
+  .rag-mark .letters { font-weight: 800; font-size: clamp(40px, 7vw, 64px); line-height: 1; letter-spacing: 0.01em; color: var(--accent); }
+  .rag-mark .meaning { display: block; margin-top: 6px; font-size: 14px; color: var(--text-muted); }
+  .rag-mark .meaning b { color: var(--text); font-weight: 600; }
+
+  /* ---------- íconos propios (formas llenas, no líneas) ---------- */
+  .icon-badge {
+    width: 72px; height: 72px;
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .icon-badge svg { width: 38px; height: 38px; }
+
+  /* ---------- comparaciones de dos (o tres) columnas ---------- */
+  .compare { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 28px; }
+  .compare-col { flex: 1 1 220px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .compare-col .cap { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+  .compare-col p { margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.55; }
+
+  /* ---------- archivo -> texto: 3 formatos ---------- */
+  .filetypes { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 30px; }
+  .filetype-col { flex: 1 1 220px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .filetype-col .cap { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 14px; font-weight: 700; color: var(--accent-dark); }
+  .filetype-col p { margin: 0; font-size: 13.5px; color: var(--text-muted); line-height: 1.55; }
+  .filetype-col p b { color: var(--text); }
+
+  /* ---------- chunking: barra de segmentos ---------- */
+  .chunk-bar { margin-top: 28px; max-width: 600px; }
+  .chunk-bar-track { position: relative; height: 40px; background: var(--border); border-radius: 8px; overflow: hidden; }
+  .chunk-seg { position: absolute; top: 4px; height: 32px; border-radius: 6px; opacity: 0.82; }
+  .chunk-seg.a { background: var(--accent); }
+  .chunk-seg.b { background: var(--accent-dark); }
+  .chunk-bar-nums { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-faint); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .chunk-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+  .chunk-legend-row { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; }
+  .chunk-legend-row .sw { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .overlap-example { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; max-width: 620px; }
+  .overlap-chunk { padding-left: 14px; border-left: 3px solid; }
+  .overlap-chunk.a { border-color: var(--accent); }
+  .overlap-chunk.b { border-color: var(--accent-dark); }
+  .overlap-chunk .overlap-label { display: block; font-size: 10.5px; font-weight: 700; color: var(--text-faint); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .overlap-chunk p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.55; }
+  .overlap-chunk mark { background: var(--accent-soft); color: var(--accent-dark); border-radius: 4px; padding: 1px 3px; font-weight: 600; }
+
+  /* ---------- pipeline con íconos (transición indexar -> preguntar) ---------- */
+  .pipeline { display: flex; align-items: flex-start; gap: 4px; margin-top: 30px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+  .pipe-step { display: flex; flex-direction: column; align-items: center; text-align: center; width: 150px; flex-shrink: 0; }
+  .pipe-step h4 { font-size: 14.5px; font-weight: 600; margin: 12px 0 4px; }
+  .pipe-step p { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+  .pipe-arrow { flex-shrink: 0; width: 28px; height: 72px; display: flex; align-items: center; justify-content: center; margin-top: 0; }
+
+  /* ---------- intro a embeddings: dispersión ---------- */
+  .scatter-row { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; margin-top: 24px; }
+  .scatter-row svg { flex-shrink: 0; }
+  dl.glossary { margin: 0; flex: 1 1 260px; min-width: 240px; }
+  dl.glossary dt { font-weight: 600; font-size: 14.5px; margin-top: 14px; }
+  dl.glossary dt:first-child { margin-top: 0; }
+  dl.glossary dd { margin: 3px 0 0; color: var(--text-muted); font-size: 13.5px; line-height: 1.55; }
+
+  /* ---------- especificaciones técnicas: lista sin cajas ---------- */
+  .specs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 36px; margin-top: 26px; }
+  @media (max-width: 680px) { .specs { grid-template-columns: 1fr; } }
+  .specs .spec { border-top: 1px solid var(--border); padding-top: 10px; }
+  .specs .spec .term { font-size: 14px; font-weight: 600; color: var(--accent-dark); }
+  .specs .spec .val { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+  .specs .spec .val b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ---------- tokens, cálculo de promedio, triángulo, escala ---------- */
+  .tokens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
+  .token-chip { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12.5px; background: var(--accent); color: #fff; border-radius: 6px; padding: 5px 9px; font-weight: 600; }
+  .token-chip.edge { background: var(--surface); border: 1px dashed var(--border); color: var(--text-faint); }
+
+  .calc-mini { width: 100%; border-collapse: collapse; margin-top: 18px; max-width: 420px; font-variant-numeric: tabular-nums; }
+  .calc-mini td { padding: 5px 10px 5px 0; font-size: 13px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+  .calc-mini td:last-child { text-align: right; color: var(--text); }
+  .calc-mini tr.total td { border-bottom: none; border-top: 2px solid var(--text); font-weight: 700; padding-top: 8px; color: var(--accent-dark); }
+  .calc-mini tr.dim-more td { color: var(--text-faint); font-style: italic; }
+
+  .tri-visual { display: flex; align-items: center; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
+  .tri-visual svg { flex-shrink: 0; }
+  .tri-visual .arrow { font-size: 22px; color: var(--text-faint); }
+  .tri-formula { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 15px; color: var(--accent-dark); background: var(--accent-soft); border-radius: var(--radius); padding: 10px 16px; }
+
+  .gauge { margin-top: 30px; max-width: 560px; }
+  .gauge-track { position: relative; height: 6px; background: var(--border); border-radius: 999px; margin: 10px 0; }
+  .gauge-mark { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
+  .gauge-ends { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-faint); margin-bottom: 18px; }
+  .gauge-legend { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .gauge-row { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; }
+  .gauge-row .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .gauge-row b { font-variant-numeric: tabular-nums; }
+
+  .note-card {
+    margin-top: 24px;
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    font-size: 13.5px;
+    color: var(--accent-dark);
+    line-height: 1.6;
+  }
+  .note-card strong { color: var(--accent-dark); }
+
+  /* ---------- prompt y reformulación ---------- */
+  .prompt-box {
+    margin-top: 20px; max-width: 520px;
+    background: var(--accent-soft); border-radius: var(--radius);
+    padding: 16px 18px; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-size: 12.5px; line-height: 1.7; color: var(--accent-dark); white-space: pre-wrap;
+  }
+  .prompt-box .tag { color: var(--text-faint); }
+  .rewrite-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  .rewrite-row .token-chip { font-size: 13px; }
+  .rewrite-row svg { flex-shrink: 0; }
+
+  /* ---------- resultados: barras ---------- */
+  .stat-row { display: flex; flex-direction: column; gap: 18px; margin-top: 26px; max-width: 520px; }
+  .stat-row .stat-top { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+  .stat-row .stat-top strong { font-variant-numeric: tabular-nums; color: var(--text); }
+  .bar-track { height: 10px; background: var(--accent-soft); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+
+  /* ---------- cierre ---------- */
+  .qr-row { display: flex; align-items: center; gap: 22px; margin-top: 30px; flex-wrap: wrap; }
+  .qr-plate { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 14px; }
+  .qr-row a { font-size: 17px; font-weight: 600; color: var(--accent-dark); text-decoration: none; }
+
+  /* ---------- nav ---------- */
+  .nav-ui {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px max(28px, env(safe-area-inset-left, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(28px, env(safe-area-inset-right, 0px));
+    background: linear-gradient(to top, var(--bg) 65%, transparent);
+  }
+  .nav-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-md);
+  }
+  .nav-btn:disabled { opacity: 0.35; cursor: default; }
+  .nav-btn svg { width: 18px; height: 18px; }
+  .dots { display: flex; gap: 7px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .dot.active { background: var(--accent); width: 18px; border-radius: 3px; }
+  .counter { font-size: 12px; color: var(--text-faint); }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- 01 Portada -->
+  <section class="slide active gutter">
+    <div class="frame frame-split split">
+      <div class="split-text">
+        <p class="eyebrow" style="letter-spacing:0.08em; text-transform:uppercase;">Chatbot institucional</p>
+        <div class="rag-mark">
+          <span class="letters">RAG</span>
+          <span class="meaning"><b>Retrieval-Augmented Generation</b> — generación de texto aumentada con una búsqueda real</span>
+        </div>
+        <h1>El asistente no inventa</h1>
+        <p class="lede">Busca en los documentos oficiales de la universidad antes de responder, y cita la fuente exacta — como quien, en vez de adivinar en el examen, abre el reglamento real y señala la página.</p>
+        <span class="pill">RAG · Facultad de Ingeniería · Universidad Libre, Seccional Cúcuta</span>
+      </div>
+      <div class="split-art">
+        <div class="blob blob-hero">
+          <svg viewBox="0 0 182 100" fill="none">
+            <rect x="4" y="22" width="40" height="52" rx="6" fill="var(--surface)" stroke="var(--accent-line)" stroke-width="2"/>
+            <rect x="12" y="10" width="40" height="52" rx="6" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>
+            <rect x="20" y="22" width="24" height="3" rx="1.5" fill="var(--accent)"/>
+            <rect x="20" y="29" width="24" height="3" rx="1.5" fill="var(--accent)"/>
+            <rect x="20" y="36" width="16" height="3" rx="1.5" fill="var(--accent)"/>
+            <circle cx="38" cy="54" r="15" fill="var(--accent-soft)" stroke="var(--accent-dark)" stroke-width="3.5"/>
+            <line x1="49" y1="65" x2="60" y2="76" stroke="var(--accent-dark)" stroke-width="4.5" stroke-linecap="round"/>
+            <circle cx="78" cy="50" r="2.6" fill="var(--text-faint)"/>
+            <circle cx="90" cy="50" r="2.6" fill="var(--text-faint)"/>
+            <circle cx="102" cy="50" r="2.6" fill="var(--accent)"/>
+            <path d="M108 50 L118 50" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M113 44 L119 50 L113 56" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <line x1="148" y1="14" x2="148" y2="7" stroke="var(--accent-dark)" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="148" cy="5" r="3" fill="var(--accent-dark)"/>
+            <rect x="126" y="14" width="44" height="36" rx="11" fill="var(--accent)"/>
+            <rect x="122" y="28" width="5" height="10" rx="2.5" fill="var(--accent)"/>
+            <rect x="169" y="28" width="5" height="10" rx="2.5" fill="var(--accent)"/>
+            <circle cx="138" cy="30" r="4" fill="#fff"/>
+            <circle cx="158" cy="30" r="4" fill="#fff"/>
+            <path d="M136 41 Q148 47 160 41" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+            <circle cx="166" cy="16" r="8" fill="var(--accent-dark)"/>
+            <path d="M162 16 L165 19 L171 13" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 El problema -->
+  <section class="slide gutter">
+    <div class="frame">
+      <p class="eyebrow">El problema</p>
+      <h2>Responde seguro. No siempre correcto.</h2>
+      <p class="lede" style="margin-top:8px;">Un modelo de lenguaje predice la palabra más probable que sigue — no "sabe" el reglamento de tu universidad, pero puede sonar igual de convincente inventándolo.</p>
+      <div class="compare">
+        <div class="compare-col">
+          <svg width="100" height="100" viewBox="0 0 64 64" fill="none">
+            <rect x="4" y="8" width="56" height="38" rx="12" fill="#fdecea"/>
+            <path d="M18 54 L18 44 L30 44 Z" fill="#fdecea"/>
+            <path d="M22 22 L30 30 M30 22 L22 30" stroke="#c0392b" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="42" cy="26" r="4" fill="#c0392b"/>
+          </svg>
+          <div class="cap">Sin este sistema</div>
+          <p>"¿Cuántos créditos necesito para grado?" — cifra inventada, dicha con total seguridad.</p>
+        </div>
+        <div class="compare-col">
+          <svg width="100" height="100" viewBox="0 0 64 64" fill="none">
+            <rect x="4" y="8" width="56" height="38" rx="12" fill="var(--accent-soft)"/>
+            <path d="M18 54 L18 44 L30 44 Z" fill="var(--accent-soft)"/>
+            <path d="M20 26 L27 33 L42 18" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <div class="cap">Con este sistema</div>
+          <p>Busca el reglamento real, encuentra el artículo exacto, y responde citando de dónde salió.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 La idea -->
+  <section class="slide gutter">
+    <div class="frame frame-split split">
+      <div class="split-text">
+        <p class="eyebrow">La idea, en una frase</p>
+        <h1 style="font-size:clamp(28px,4.8vw,44px);">Antes de responder, busca.<br>Antes de convencer, cita.</h1>
+        <p class="lede">Eso es RAG — Retrieval-Augmented Generation: generación de texto aumentada con una búsqueda real, no solo con lo que el modelo recuerda. Lo que sigue es ese proceso completo, en dos partes: primero cómo se <b>indexa</b> un documento, después qué pasa cuando alguien <b>pregunta</b>.</p>
+      </div>
+      <div class="split-art">
+        <div class="blob">
+          <svg viewBox="0 0 64 64" fill="none">
+            <circle cx="24" cy="26" r="15" fill="none" stroke="var(--accent-dark)" stroke-width="4.5"/>
+            <line x1="35" y1="37" x2="46" y2="48" stroke="var(--accent-dark)" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="38" y="6" width="22" height="16" rx="6" fill="var(--accent)"/>
+            <path d="M44 10 L54 10 M44 14 L50 14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 Paso 1 — archivo -> texto (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 1 — le das un archivo</p>
+      <h2>TXT, Word, PDF o Excel: cada uno distinto</h2>
+      <p class="lede" style="margin-top:6px;">Antes de buscar nada, el sistema tiene que volver tu archivo texto plano — y no lo hace igual con todos.</p>
+      <div class="filetypes">
+        <div class="filetype-col">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="10" y="6" width="28" height="36" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/><rect x="15" y="15" width="18" height="2.4" rx="1.2" fill="var(--accent)"/><rect x="15" y="21" width="18" height="2.4" rx="1.2" fill="var(--accent)"/><rect x="15" y="27" width="11" height="2.4" rx="1.2" fill="var(--accent)"/></svg>
+          </div>
+          <div class="cap">.txt</div>
+          <p>Se lee tal cual. <b>Es el único formato que no cambia.</b></p>
+        </div>
+        <div class="filetype-col">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="20" height="26" rx="2.5" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/><rect x="9" y="15" width="12" height="2" rx="1" fill="var(--accent)"/><rect x="9" y="20" width="12" height="2" rx="1" fill="var(--accent)"/><path d="M27 21h11m0 0-4-4m4 4-4 4" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="26" width="19" height="14" rx="2.5" fill="var(--accent)"/><rect x="28" y="31" width="11" height="2" rx="1" fill="#fff"/><rect x="28" y="35" width="7" height="2" rx="1" fill="#fff"/></svg>
+          </div>
+          <div class="cap">.pdf / .docx</div>
+          <p>Se extrae el texto y <b>se indexa como .txt</b> (releerlo cada vez puede ser ~14 veces más lento) — el original se guarda aparte, para poder descargarlo después.</p>
+        </div>
+        <div class="filetype-col">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="6" y="8" width="36" height="32" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/><line x1="6" y1="18" x2="42" y2="18" stroke="var(--accent)" stroke-width="1.4"/><line x1="6" y1="28" x2="42" y2="28" stroke="var(--accent)" stroke-width="1.4"/><line x1="18" y1="8" x2="18" y2="40" stroke="var(--accent)" stroke-width="1.4"/><line x1="30" y1="8" x2="30" y2="40" stroke="var(--accent)" stroke-width="1.4"/></svg>
+          </div>
+          <div class="cap">.xlsx</div>
+          <p><b>No se convierte</b> — se mantiene para leerlo fila por fila, sin perder esa estructura.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 Paso 2 — chunking (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 2 — se corta en fragmentos</p>
+      <h2>Ni todo junto, ni cualquier corte</h2>
+      <p class="lede" style="margin-top:6px;">El sistema no busca en el documento entero: lo divide en trozos (<b>chunks</b>) de ~1000 caracteres, cortando siempre en un punto o un espacio — nunca a mitad de una palabra.</p>
+      <div class="chunk-bar">
+        <div class="chunk-bar-track">
+          <div class="chunk-seg a" style="left:0%; width:63.2%;"></div>
+          <div class="chunk-seg b" style="left:61.2%; width:38.8%;"></div>
+        </div>
+        <div class="chunk-bar-nums"><span>0</span><span>1389 caracteres</span></div>
+      </div>
+      <div class="chunk-legend">
+        <div class="chunk-legend-row"><span class="sw" style="background:var(--accent);"></span> Chunk 0 — caracteres 0 a 878</div>
+        <div class="chunk-legend-row"><span class="sw" style="background:var(--accent-dark);"></span> Chunk 1 — caracteres 850 a 1389</div>
+      </div>
+      <div class="overlap-example">
+        <div class="overlap-chunk a">
+          <span class="overlap-label">Fin del chunk 0</span>
+          <p>...una vez el estudiante culmina el proceso en la oficina de admisiones. <mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark></p>
+        </div>
+        <div class="overlap-chunk b">
+          <span class="overlap-label">Inicio del chunk 1</span>
+          <p><mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark> Los estudiantes de primer ingreso deben presentar además el certificado de bachiller original.</p>
+        </div>
+      </div>
+      <div class="note-card">
+        <strong>Caso real medido en este proyecto:</strong> un párrafo de 1389 caracteres se cortó así. El traslape entre ambos chunks quedó en solo 28 caracteres (no los 150 configurados), porque el corte real busca el punto más cercano, no una cuenta exacta de caracteres. La frase resaltada arriba ilustra ese mismo mecanismo: son los mismos caracteres físicos, repetidos en ambos chunks.
+      </div>
+      <div class="note-card" style="margin-top:12px;">
+        <strong>La excepción:</strong> una fila de Excel o un par pregunta-respuesta de FAQ nunca se parte — cada uno es, completo, su propio chunk.
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 Paso 3 — intro a embeddings (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — cada fragmento se vuelve números</p>
+      <h2>El texto se vuelve números</h2>
+      <p class="lede" style="margin-top:6px;">Una computadora no entiende palabras — entiende vectores. Tanto cada fragmento ahora, como cada pregunta más adelante, pasan por el mismo cálculo. Frases con significado parecido quedan cerca entre sí.</p>
+      <div class="scatter-row">
+        <svg width="220" height="180" viewBox="0 0 220 180">
+          <rect width="220" height="180" rx="12" fill="var(--accent-soft)"/>
+          <circle cx="60" cy="110" r="5" fill="var(--accent)"/>
+          <circle cx="78" cy="128" r="5" fill="var(--accent)"/>
+          <circle cx="52" cy="135" r="5" fill="var(--accent)"/>
+          <circle cx="70" cy="90" r="6" fill="var(--accent-dark)"/>
+          <text x="86" y="95" font-size="10.5" fill="var(--accent-dark)" font-family="-apple-system,sans-serif">cálculo diferencial</text>
+          <circle cx="150" cy="55" r="5" fill="var(--accent)"/>
+          <circle cx="168" cy="70" r="5" fill="var(--accent)"/>
+          <circle cx="160" cy="40" r="5" fill="var(--accent)"/>
+          <text x="118" y="30" font-size="10.5" fill="var(--text-muted)" font-family="-apple-system,sans-serif">álgebra lineal</text>
+        </svg>
+        <dl class="glossary">
+          <dt>Embeddings</dt>
+          <dd>384 números por fragmento, calculados localmente, sin costo.</dd>
+          <dt>Búsqueda híbrida</dt>
+          <dd>Significado (semántica) + palabra exacta, en paralelo — más adelante, en detalle.</dd>
+          <dt>Verificación</dt>
+          <dd>Un segundo modelo compara cada candidato contra la pregunta exacta.</dd>
+        </dl>
+      </div>
+      <p class="hint">¿Por qué estas dos materias quedan tan cerca en el mapa? El modelo a veces las confunde — se resuelve más adelante, con números reales.</p>
+    </div>
+  </section>
+
+  <!-- 07 Paso 3 — tokenización y promedio (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — el cálculo real, paso a paso</p>
+      <h2>De la frase a un solo vector</h2>
+      <p class="lede" style="margin-top:4px;">La pregunta real <b>"¿Cuándo abren las inscripciones?"</b> no se lee como palabras completas — se corta en pedazos de un vocabulario fijo:</p>
+      <div class="tokens">
+        <span class="token-chip edge">&lt;s&gt;</span>
+        <span class="token-chip">¿</span>
+        <span class="token-chip">Cu</span>
+        <span class="token-chip">á</span>
+        <span class="token-chip">ndo</span>
+        <span class="token-chip">▁a</span>
+        <span class="token-chip">bren</span>
+        <span class="token-chip">▁las</span>
+        <span class="token-chip">▁in</span>
+        <span class="token-chip">scrip</span>
+        <span class="token-chip">ciones</span>
+        <span class="token-chip">?</span>
+        <span class="token-chip edge">&lt;/s&gt;</span>
+      </div>
+      <p class="hint">13 tokens reales — "inscripciones" se parte en 3 piezas (▁in + scrip + ciones). Cada uno arranca con 384 números y pasa por 12 capas que lo van contextualizando.</p>
+      <p class="lede" style="margin-top:26px;">Para representar la frase completa con un solo vector, se <b>promedia</b> cada una de las 384 posiciones a través de los 13 tokens. Así se ve la cuenta real, completa, para una sola posición (dimensión 0):</p>
+      <table class="calc-mini">
+        <tr><td>&lt;s&gt;</td><td>0.3423</td></tr>
+        <tr><td>¿ · Cu · á · ndo</td><td>0.2428 + 0.0372 + 0.1019 + 0.0732</td></tr>
+        <tr><td>▁a · bren · ▁las</td><td>0.1803 + 0.1174 + 0.0463</td></tr>
+        <tr><td>▁in · scrip · ciones</td><td>0.2051 + 0.4122 + 0.1744</td></tr>
+        <tr><td>? · &lt;/s&gt;</td><td>0.3073 + 0.3421</td></tr>
+        <tr class="total"><td>suma ÷ 13 tokens =</td><td>0.1986</td></tr>
+      </table>
+      <p class="hint">Esto se repite 384 veces (una por dimensión) — el resultado es un único vector que representa toda la pregunta.</p>
+    </div>
+  </section>
+
+  <!-- 08 Paso 3 — normalización (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — el cálculo real, paso a paso</p>
+      <h2>El mismo Pitágoras, en 384 dimensiones</h2>
+      <p class="lede" style="margin-top:4px;">Para saber qué tan "largo" es el vector promediado, se usa el mismo teorema de siempre: elevar cada número al cuadrado, sumar, y sacar raíz.</p>
+      <div class="tri-visual">
+        <svg width="110" height="90" viewBox="0 0 110 90" fill="none">
+          <path d="M8 78 L8 10 L95 78 Z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+          <text x="40" y="48" font-size="11" fill="var(--accent-dark)">c</text>
+          <text x="2" y="48" font-size="11" fill="var(--text-muted)">a</text>
+          <text x="50" y="86" font-size="11" fill="var(--text-muted)">b</text>
+        </svg>
+        <div class="tri-formula">a² + b² = c²</div>
+        <span class="arrow">→</span>
+        <div class="tri-formula">dim₀² + dim₁² + ··· + dim₃₈₃² = longitud²</div>
+      </div>
+      <table class="calc-mini" style="margin-top:22px;">
+        <tr><td>dim 0² = 0.1986²</td><td>0.0395</td></tr>
+        <tr><td>dim 1² = 0.1579²</td><td>0.0249</td></tr>
+        <tr><td>dim 2² = (-0.2664)²</td><td>0.0710</td></tr>
+        <tr><td>dim 3² = (-0.1290)²</td><td>0.0166</td></tr>
+        <tr><td>dim 4² = (-0.2143)²</td><td>0.0459</td></tr>
+        <tr class="dim-more"><td>+ los cuadrados de las otras 379 dimensiones</td><td>+ 20.0880</td></tr>
+        <tr><td>suma de los 384 cuadrados</td><td>20.2921</td></tr>
+        <tr class="total"><td>√20.2921 = longitud del vector</td><td>4.5047</td></tr>
+      </table>
+      <p class="hint">Cada dimensión se divide entre esa longitud (0.1986 ÷ 4.5047 = 0.0441) — así el vector final siempre mide exactamente 1, listo para compararse.</p>
+    </div>
+  </section>
+
+  <!-- 09 Transición indexar -> preguntar -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow">Ahora, cuando alguien pregunta</p>
+      <h2>Lo mismo, en el momento de responder</h2>
+      <div class="pipeline">
+        <div class="pipe-step">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="4" y="8" width="40" height="26" rx="10" fill="var(--accent-soft)"/><path d="M14 38 L14 31 L22 31 Z" fill="var(--accent-soft)"/><rect x="12" y="17" width="20" height="3" rx="1.5" fill="var(--accent)"/><rect x="12" y="23" width="14" height="3" rx="1.5" fill="var(--accent)"/></svg>
+          </div>
+          <h4>Pregunta</h4>
+          <p>"¿Horario de bienestar?"</p>
+        </div>
+        <div class="pipe-arrow"><svg width="20" height="14" viewBox="0 0 20 14" fill="none"><path d="M1 7h16m0 0-5-5m5 5-5 5" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipe-step">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="22" height="28" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/><rect x="12" y="13" width="14" height="2.4" rx="1.2" fill="var(--accent)"/><rect x="12" y="19" width="14" height="2.4" rx="1.2" fill="var(--accent)"/><rect x="12" y="25" width="9" height="2.4" rx="1.2" fill="var(--accent)"/><circle cx="33" cy="30" r="7" fill="none" stroke="var(--accent-dark)" stroke-width="2.5"/><line x1="38" y1="35" x2="43" y2="40" stroke="var(--accent-dark)" stroke-width="2.5" stroke-linecap="round"/></svg>
+          </div>
+          <h4>Busca</h4>
+          <p>Por significado y por palabra, a la vez</p>
+        </div>
+        <div class="pipe-arrow"><svg width="20" height="14" viewBox="0 0 20 14" fill="none"><path d="M1 7h16m0 0-5-5m5 5-5 5" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipe-step">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M24 5 L40 11 V22 C40 33 33 39 24 43 C15 39 8 33 8 22 V11 Z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/><path d="M17 23 L22 28 L31 17" stroke="var(--accent-dark)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+          <h4>Verifica</h4>
+          <p>Descarta — o reformula y reintenta</p>
+        </div>
+        <div class="pipe-arrow"><svg width="20" height="14" viewBox="0 0 20 14" fill="none"><path d="M1 7h16m0 0-5-5m5 5-5 5" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipe-step">
+          <div class="icon-badge">
+            <svg viewBox="0 0 48 48" fill="none"><rect x="4" y="8" width="40" height="26" rx="10" fill="var(--accent)"/><path d="M14 38 L14 31 L22 31 Z" fill="var(--accent)"/><rect x="12" y="16" width="22" height="2.6" rx="1.3" fill="#fff"/><rect x="12" y="22" width="16" height="2.6" rx="1.3" fill="#fff"/></svg>
+          </div>
+          <h4>Responde</h4>
+          <p>Cita la fuente, o dice "no sé"</p>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:24px;">Los siguientes cuatro pasos abren cada una de estas etapas, con números reales.</p>
+    </div>
+  </section>
+
+  <!-- 10a Paso 4 — intuición geométrica en 3D (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 4 — comparar la pregunta</p>
+      <h2>Imagina 3 dimensiones, no 384</h2>
+      <p class="lede" style="margin-top:4px;">Un vector real tiene 384 números — imposible de dibujar. Pero la idea geométrica es exactamente la misma en 3 dimensiones: cada dato es una flecha desde el origen, y dos flechas que apuntan casi al mismo lugar representan significados parecidos.</p>
+      <div class="scatter-row">
+        <svg width="230" height="210" viewBox="0 0 200 200">
+          <line x1="100" y1="150" x2="180" y2="178" stroke="var(--text-faint)" stroke-width="1.3"/>
+          <line x1="100" y1="150" x2="20" y2="178" stroke="var(--text-faint)" stroke-width="1.3"/>
+          <line x1="100" y1="150" x2="100" y2="38" stroke="var(--text-faint)" stroke-width="1.3"/>
+          <text x="184" y="184" font-size="11" fill="var(--text-faint)">x</text>
+          <text x="10" y="184" font-size="11" fill="var(--text-faint)">y</text>
+          <text x="94" y="32" font-size="11" fill="var(--text-faint)">z</text>
+          <circle cx="100" cy="150" r="2.5" fill="var(--text-faint)"/>
+
+          <line x1="100" y1="150" x2="44" y2="128" stroke="var(--text-faint)" stroke-width="2.5"/>
+          <circle cx="44" cy="128" r="4.5" fill="var(--text-faint)"/>
+          <text x="22" y="118" font-size="11" fill="var(--text-muted)">v2 · dato 2</text>
+
+          <line x1="100" y1="150" x2="148" y2="122" stroke="var(--accent)" stroke-width="3"/>
+          <circle cx="148" cy="122" r="5" fill="var(--accent)"/>
+          <text x="140" y="112" font-size="11" fill="var(--accent-dark)">v1 · dato 1</text>
+
+          <line x1="100" y1="150" x2="132" y2="125" stroke="var(--accent-dark)" stroke-width="2.5" stroke-dasharray="5 3"/>
+          <circle cx="132" cy="125" r="4.5" fill="var(--accent-dark)"/>
+          <text x="108" y="100" font-size="11" fill="var(--accent-dark)">v3 · búsqueda</text>
+        </svg>
+        <dl class="glossary">
+          <dt>v1 y v3 — ángulo pequeño</dt>
+          <dd>Apuntan casi al mismo lugar: se parecen en significado.</dd>
+          <dt>v2 — ángulo grande</dt>
+          <dd>Apunta a otro lado: no tiene relación con la búsqueda.</dd>
+        </dl>
+      </div>
+      <p class="hint">Medir ese ángulo es, exactamente, el producto punto que sigue — con números reales.</p>
+    </div>
+  </section>
+
+  <!-- 10 Paso 4 — producto punto (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 4 — comparar la pregunta</p>
+      <h2>Comparar es un producto punto</h2>
+      <p class="lede" style="margin-top:4px;">La pregunta se convierte en vector con el mismo cálculo del paso 3, ya normalizado. Multiplicar coordenada por coordenada y sumar da directamente qué tan parecidos son dos vectores. Contra dos fragmentos reales distintos:</p>
+      <div class="gauge" style="margin-top:22px;">
+        <div class="gauge-track">
+          <div class="gauge-mark" style="left:9%; background:var(--text-faint);"></div>
+          <div class="gauge-mark" style="left:71%; background:var(--accent);"></div>
+        </div>
+        <div class="gauge-ends"><span>0.0 — sin relación</span><span>1.0 — mismo significado</span></div>
+        <div class="gauge-legend">
+          <div class="gauge-row"><span class="dot" style="background:var(--text-faint);"></span><b>0.0898</b> — "el auditorio tiene 300 puestos" (sin relación)</div>
+          <div class="gauge-row"><span class="dot" style="background:var(--accent);"></span><b style="color:var(--accent-dark);">0.7076</b> — "las inscripciones inician el 15 de enero" (sí responde)</div>
+        </div>
+      </div>
+      <div class="note-card" style="margin-top:20px;">
+        <strong>Esto es lo que hace FAISS, al momento de buscar:</strong> repite este producto punto contra cada chunk guardado — comparación exacta, sin aproximar — en 15 a 25 milisegundos entre miles de fragmentos.
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 Paso 5 — semántica vs léxica (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 5 — el significado no siempre basta</p>
+      <h2>Semántica y léxica: las dos vías</h2>
+      <p class="lede" style="margin-top:4px;">El producto punto mide <b>significado</b> (semántica). Pero el significado puede fallar: el modelo a veces confunde temas parecidos — como "cálculo diferencial" y "álgebra lineal" en el mapa del paso 3. Por eso hay una segunda vía, <b>léxica</b> (BM25): coincidencia literal de palabras, sin entender nada.</p>
+      <div class="compare">
+        <div class="compare-col">
+          <div class="cap">Solo semántica — pregunta: "la clase de cálculo diferencial"</div>
+          <div class="gauge-legend">
+            <div class="gauge-row"><span class="dot" style="background:var(--accent);"></span><b style="color:var(--accent-dark);">0.4734</b> — "Álgebra Lineal" (gana, y está mal)</div>
+            <div class="gauge-row"><span class="dot" style="background:var(--text-faint);"></span><b>0.2698</b> — "Cálculo Diferencial" (la correcta, pierde)</div>
+          </div>
+        </div>
+        <div class="compare-col">
+          <div class="cap">Solo léxica (BM25) — misma pregunta</div>
+          <div class="gauge-legend">
+            <div class="gauge-row"><span class="dot" style="background:var(--accent);"></span><b style="color:var(--accent-dark);">11.73</b> — "Cálculo Diferencial" (gana, y está bien)</div>
+            <div class="gauge-row"><span class="dot" style="background:var(--text-faint);"></span><b>0.0</b> — "Álgebra Lineal" (ni una palabra coincide)</div>
+          </div>
+        </div>
+      </div>
+      <div class="note-card" style="margin-top:20px;">
+        <strong>Caso real medido en este proyecto:</strong> ninguna vía sola alcanza. El sistema busca por las dos en paralelo y le entrega ambos resultados juntos al verificador — así "calculo" y "diferencial", palabras exactas, rescatan la fila correcta aunque el significado las haya confundido.
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 Paso 6 — verificación y reformulación (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 6 — después de buscar, antes de responder</p>
+      <h2>Verifica, y si hace falta, reformula</h2>
+      <div class="compare">
+        <div class="compare-col">
+          <div class="cap">Verificación (siempre)</div>
+          <p>Un segundo modelo compara cada candidato directamente contra la pregunta final. Lo que no supera un puntaje mínimo de relevancia <b>se descarta</b> — nunca llega al LLM.</p>
+        </div>
+        <div class="compare-col">
+          <div class="cap">Reformulación (solo si hace falta)</div>
+          <p>Si la búsqueda no encontró nada relevante, o la pregunta es un seguimiento corto con historial previo, el sistema le pide al modelo de lenguaje otras formas de plantearla, y repite la búsqueda.</p>
+        </div>
+      </div>
+      <div class="rewrite-row">
+        <span class="token-chip edge">"precio"</span>
+        <span class="hint" style="margin:0;">(con historial: "Ingeniería en TIC")</span>
+        <svg width="20" height="14" viewBox="0 0 20 14" fill="none"><path d="M1 7h16m0 0-5-5m5 5-5 5" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="token-chip">"precio de Ingeniería en TIC"</span>
+      </div>
+      <div class="note-card">
+        <strong>Caso real documentado:</strong> sin ese contexto, "precio" por sí solo busca mal. Con la reformulación, el sistema vuelve a buscar con la versión completa y usa esa — no la original — para el resto del pipeline.
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 Paso 7 — prompt, caché y fuentes (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 7 — el último tramo</p>
+      <h2>El contexto va al prompt — y a veces ya está lista</h2>
+      <p class="lede" style="margin-top:4px;">Lo que sobrevivió a la verificación se arma en un solo mensaje para el modelo de lenguaje (Groq), con una regla estricta:</p>
+      <div class="prompt-box"><span class="tag"># contexto</span>
+[Art. 7] Al cumplir un año de antigüedad...
+[Art. 18] Se permiten dos días de home office...
+<span class="tag"># instrucción</span>
+Responde solo con este contexto
+y cita la fuente.</div>
+      <p class="hint">Esto, y solo esto, es lo que ve el modelo de lenguaje — nunca el documento completo.</p>
+    </div>
+  </section>
+
+  <!-- 13b Paso 7 — caché y fuentes, en diagrama (PREGUNTAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Preguntar</span> · Paso 7 — antes y después de llamar a Groq</p>
+      <h2>A veces, ni hace falta llamar al modelo</h2>
+      <p class="lede" style="margin-top:4px;">Antes de gastar una llamada real, el sistema revisa si ya resolvió este mismo contexto antes:</p>
+      <figure style="margin:20px 0 0;">
+        <svg width="100%" height="auto" viewBox="0 0 480 420" role="img" aria-label="Diagrama: el contexto recuperado se compara contra una huella; si ya existe, se reutiliza la respuesta en casi 0 ms; si no, se llama a Groq, que tarda 704.66 ms medidos; ambos caminos terminan filtrando las fuentes realmente usadas antes de responder al estudiante." style="max-width:460px; height:auto; display:block; margin:0 auto;">
+          <rect x="150" y="10" width="180" height="40" rx="8" fill="var(--accent-soft)" stroke="var(--border)" stroke-width="1.2"/>
+          <text x="240" y="34" font-size="12" text-anchor="middle" fill="var(--text)">Fragmentos ya verificados</text>
+
+          <line x1="240" y1="50" x2="240" y2="70" stroke="var(--text-faint)" stroke-width="1.4"/>
+          <polygon points="234,70 246,70 240,78" fill="var(--text-faint)"/>
+
+          <rect x="110" y="78" width="260" height="40" rx="8" fill="var(--accent-soft)" stroke="var(--border)" stroke-width="1.2"/>
+          <text x="240" y="102" font-size="12" text-anchor="middle" fill="var(--text)">Calcula una huella del contexto</text>
+
+          <line x1="240" y1="118" x2="120" y2="152" stroke="var(--text-faint)" stroke-width="1.4"/>
+          <line x1="240" y1="118" x2="360" y2="152" stroke="var(--accent)" stroke-width="1.4"/>
+          <text x="162" y="138" font-size="11" fill="var(--text-faint)">huella ya vista</text>
+          <text x="300" y="138" font-size="11" fill="var(--accent-dark)">huella nueva</text>
+
+          <rect x="35" y="152" width="170" height="42" rx="8" fill="var(--surface)" stroke="var(--text-faint)" stroke-width="1.3" stroke-dasharray="4 3"/>
+          <text x="120" y="177" font-size="12" text-anchor="middle" fill="var(--text-muted)">Huella ya vista</text>
+
+          <rect x="275" y="152" width="170" height="42" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+          <text x="360" y="177" font-size="12" text-anchor="middle" fill="var(--accent-dark)">Huella nueva</text>
+
+          <line x1="120" y1="194" x2="120" y2="214" stroke="var(--text-faint)" stroke-width="1.4"/>
+          <polygon points="114,214 126,214 120,222" fill="var(--text-faint)"/>
+          <line x1="360" y1="194" x2="360" y2="214" stroke="var(--accent)" stroke-width="1.4"/>
+          <polygon points="354,214 366,214 360,222" fill="var(--accent)"/>
+
+          <rect x="25" y="222" width="190" height="46" rx="8" fill="var(--surface)" stroke="var(--text-faint)" stroke-width="1.3" stroke-dasharray="4 3"/>
+          <text x="120" y="241" font-size="11.5" text-anchor="middle" fill="var(--text-muted)">Reutiliza la respuesta</text>
+          <text x="120" y="256" font-size="11.5" text-anchor="middle" fill="var(--text-muted)">ya generada</text>
+
+          <rect x="265" y="222" width="190" height="46" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+          <text x="360" y="246" font-size="12" text-anchor="middle" fill="var(--accent-dark)" font-weight="700">Llama a Groq (LLM)</text>
+
+          <text x="120" y="286" font-size="13" text-anchor="middle" fill="var(--text)" font-weight="700">~0 ms</text>
+          <text x="360" y="286" font-size="13" text-anchor="middle" fill="var(--accent-dark)" font-weight="700">704.66 ms</text>
+          <text x="360" y="300" font-size="10.5" text-anchor="middle" fill="var(--text-faint)">medido en este proyecto</text>
+
+          <line x1="120" y1="268" x2="150" y2="318" stroke="var(--text-faint)" stroke-width="1.3"/>
+          <line x1="360" y1="300" x2="330" y2="318" stroke="var(--accent)" stroke-width="1.3"/>
+
+          <rect x="90" y="318" width="300" height="46" rx="8" fill="var(--accent-soft)" stroke="var(--border)" stroke-width="1.2"/>
+          <text x="240" y="337" font-size="11.5" text-anchor="middle" fill="var(--text)">Filtra: cita solo las fuentes</text>
+          <text x="240" y="352" font-size="11.5" text-anchor="middle" fill="var(--text)">que el modelo usó de verdad</text>
+
+          <line x1="240" y1="364" x2="240" y2="384" stroke="var(--text-faint)" stroke-width="1.4"/>
+          <polygon points="234,384 246,384 240,392" fill="var(--text-faint)"/>
+
+          <rect x="130" y="392" width="220" height="24" rx="8" fill="var(--accent)"/>
+          <text x="240" y="408" font-size="12" text-anchor="middle" fill="#fff" font-weight="600">Respuesta al estudiante</text>
+        </svg>
+        <figcaption class="hint" style="text-align:center;">Dos preguntas distintas que recuperan el mismo contexto comparten respuesta — sin gastar una segunda llamada.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 14 Arquitectura técnica -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow">Para quienes quieren más</p>
+      <h2>La arquitectura completa</h2>
+      <p class="lede" style="margin-top:4px;">Cada pieza real del sistema, medida — no estimada.</p>
+      <div class="specs">
+        <div class="spec">
+          <div class="term">Embeddings</div>
+          <div class="val"><b>paraphrase-multilingual-MiniLM-L12-v2</b> — 384 dimensiones por fragmento, Sentence-Transformers, 100% local y gratuito.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Chunking</div>
+          <div class="val">Fragmentos de <b>1000</b> caracteres con <b>150</b> de traslape; filas de Excel y preguntas frecuentes, una por fragmento.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Recuperación híbrida</div>
+          <div class="val">FAISS (semántica) + BM25 (léxica) en paralelo, hasta <b>30</b> candidatos combinados sin duplicar.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Reranking</div>
+          <div class="val">Cross-encoder local compara cada candidato contra la pregunta exacta; descarta lo que no supera el umbral calibrado.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Reformulación</div>
+          <div class="val">Si no encuentra nada (o es un seguimiento corto con historial), reintenta con variantes de la pregunta antes de rendirse.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Generación</div>
+          <div class="val"><b>Groq</b> (openai/gpt-oss-20b) sobre hardware LPU — <b>~1000</b> tokens/seg en streaming.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Fuentes citadas</div>
+          <div class="val">El modelo reporta qué documentos usó de verdad; solo esos se muestran — nunca un fragmento "de relleno".</div>
+        </div>
+        <div class="spec">
+          <div class="term">Caché de respuestas</div>
+          <div class="val">Por huella del contexto recuperado, no por redacción exacta — dos preguntas equivalentes reutilizan la misma respuesta.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Confiabilidad</div>
+          <div class="val"><b>331</b> pruebas automatizadas; evaluación de precisión repetible con un solo comando.</div>
+        </div>
+        <div class="spec">
+          <div class="term">Ingesta web</div>
+          <div class="val">Rastreo propio con BFS, respeta <b>robots.txt</b>, filtra plantillas sin editar y omite páginas sin cambios (hash SHA-256).</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15 Resultados -->
+  <section class="slide gutter">
+    <div class="frame frame-split split">
+      <div class="split-text">
+        <p class="eyebrow">Medido, no solo afirmado</p>
+        <h2>¿Y de verdad funciona?</h2>
+        <p class="lede" style="margin-top:6px;">Evaluación automatizada, repetible con un comando, sobre preguntas de prueba reales.</p>
+        <div class="stat-row">
+          <div>
+            <div class="stat-top"><span>Preguntas respondidas correctamente</span><strong>9/10</strong></div>
+            <div class="bar-track"><div class="bar-fill" style="width:90%"></div></div>
+          </div>
+          <div>
+            <div class="stat-top"><span>Citó el documento fuente correcto</span><strong>10/10</strong></div>
+            <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+          </div>
+          <div>
+            <div class="stat-top"><span>Reconoció si tenía información suficiente</span><strong>10/10</strong></div>
+            <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="split-art">
+        <div class="blob">
+          <svg viewBox="0 0 64 64" fill="none">
+            <path d="M32 6 L50 14 V28 C50 42 42 50 32 55 C22 50 14 42 14 28 V14 Z" fill="var(--accent)"/>
+            <path d="M22 30 L29 37 L43 21" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 Cierre -->
+  <section class="slide gutter">
+    <div class="frame frame-split split">
+      <div class="split-text">
+        <h1>Pregúntale algo real</h1>
+        <p class="lede">Escanea y pruébalo tú mismo, ahora mismo, en este stand.</p>
+        <div class="qr-row">
+          <div class="qr-plate" id="qrbox"></div>
+          <a href="https://chatbot.nubecol.com/" target="_blank" rel="noopener">chatbot.nubecol.com</a>
+        </div>
+      </div>
+      <div class="split-art">
+        <div class="blob">
+          <svg viewBox="0 0 64 64" fill="none">
+            <rect x="20" y="4" width="24" height="42" rx="6" fill="var(--surface)" stroke="var(--accent)" stroke-width="2.5"/>
+            <rect x="24" y="10" width="16" height="24" rx="3" fill="var(--accent-soft)"/>
+            <circle cx="32" cy="40" r="2" fill="var(--accent)"/>
+            <rect x="26" y="16" width="12" height="2.2" rx="1.1" fill="var(--accent)"/>
+            <rect x="26" y="21" width="8" height="2.2" rx="1.1" fill="var(--accent)"/>
+            <circle cx="46" cy="14" r="9" fill="var(--accent-dark)"/>
+            <path d="M42 14 L45 17 L51 10" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav-ui">
+  <button class="nav-btn" id="prevBtn" aria-label="Anterior">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+  </button>
+  <div style="display:flex; align-items:center; gap:14px;">
+    <div class="dots" id="dots"></div>
+    <span class="counter" id="counter">1 / 16</span>
+  </div>
+  <button class="nav-btn" id="nextBtn" aria-label="Siguiente">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+  </button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const slides = Array.from(document.querySelectorAll(".slide"));
+  const dotsEl = document.getElementById("dots");
+  const counterEl = document.getElementById("counter");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  let current = 0;
+
+  slides.forEach((_, i) => {
+    const d = document.createElement("div");
+    d.className = "dot" + (i === 0 ? " active" : "");
+    dotsEl.appendChild(d);
+  });
+  const dots = Array.from(dotsEl.children);
+
+  function render() {
+    slides.forEach((s, i) => s.classList.toggle("active", i === current));
+    dots.forEach((d, i) => d.classList.toggle("active", i === current));
+    counterEl.textContent = (current + 1) + " / " + slides.length;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === slides.length - 1;
+  }
+
+  function go(delta) {
+    current = Math.min(slides.length - 1, Math.max(0, current + delta));
+    render();
+  }
+
+  prevBtn.addEventListener("click", () => go(-1));
+  nextBtn.addEventListener("click", () => go(1));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === " ") go(1);
+    if (e.key === "ArrowLeft") go(-1);
+  });
+
+  let touchStartX = null;
+  document.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener("touchend", (e) => {
+    if (touchStartX === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(delta) > 50) go(delta < 0 ? 1 : -1);
+    touchStartX = null;
+  });
+
+  render();
+
+  try {
+    new QRCode(document.getElementById("qrbox"), {
+      text: "https://chatbot.nubecol.com/",
+      width: 110,
+      height: 110,
+      colorDark: "#2e1065",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } catch (e) {
+    document.getElementById("qrbox").textContent = "chatbot.nubecol.com";
+  }
+</script>
+</body>
+</html>
