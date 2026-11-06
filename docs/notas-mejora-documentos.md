@@ -93,14 +93,14 @@ XLSX), decidiendo antes si el original se descarta o se conserva aparte.
 
 ### Implementado
 
-El usuario confirmó: **el archivo original se descarta** -- en el servidor
-solo se conservan los `.txt`. Implementado en
+El usuario confirmó inicialmente: **el archivo original se descarta** -- en
+el servidor solo se conservan los `.txt`. Implementado en
 `app/api/routes.py::_upload_document`:
 
 - PDF y DOCX: se extrae el texto con `document_loader.load_document()`
   (la misma extracción que ya se usaba para indexar, sin cambios de
   calidad), se guarda como `<nombre-original>.txt`, y el PDF/DOCX subido
-  se borra del servidor de inmediato -- no queda ninguna copia.
+  se borraba del servidor de inmediato -- no quedaba ninguna copia.
 - XLSX y TXT: sin cambios, se suben tal cual (ver matiz 2 arriba).
 - Si la extracción falla (PDF corrupto, etc.), se borra el archivo
   temporal y se devuelve un error 400 -- no queda nada a medias.
@@ -112,6 +112,16 @@ solo se conservan los `.txt`. Implementado en
   agregar un consecutivo automático (`"Reporte.txt"` → `"Reporte (2).txt"`)
   en vez de sobreescribir, y avisa al administrador con qué nombre quedó
   guardado el archivo.
+- **Actualización posterior (revierte el descarte):** la decisión de
+  descartar el original cambió -- ya no se borra. `_finalize_converted_document`
+  lo mueve a `DOCUMENT_ORIGINALS_DIR` (carpeta `document_originals/`, fuera
+  de `DOCUMENTS_DIR` para que la ingesta no lo vea) en vez de borrarlo, para
+  poder servirlo tal cual si un estudiante descarga esa fuente desde el
+  chat (ver [casos-de-uso.md, CU-08](casos-de-uso.md#cu-08-descargar-el-documento-original-citado-como-fuente)
+  y `_find_stored_original`/`download_document` en `app/api/routes.py`). El
+  razonamiento de performance de esta sección (por qué indexar el `.txt` y
+  no re-parsear el PDF/DOCX cada vez) sigue vigente igual -- lo único que
+  cambió es que ahora el original no se pierde.
 - **Actualización posterior:** apareció un caso hermano del matiz 4 con
   la indexación automática de sitios web -- ahí no hay ni siquiera un
   `.txt` derivado de un archivo subido, solo el contenido de una página

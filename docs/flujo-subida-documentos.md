@@ -39,10 +39,17 @@ misma función compartida: **`_upload_document(content, filename, dependencia_id
      consecutivo si ya existe uno igual (`_next_available_txt_name`: `"Reporte.txt"`
      → `"Reporte (2).txt"`, etc. -- evita que un PDF y un DOCX con el mismo
      nombre base se pisen entre sí).
-   - **El PDF/DOCX original se borra** -- en el servidor solo queda el `.txt`.
-     Motivo medido en [notas-mejora-documentos.md](notas-mejora-documentos.md):
-     re-parsear un PDF en cada reconstrucción del índice puede ser hasta ~14x
-     más lento que leer un `.txt`, y un PDF corrupto puede tardar +60s.
+   - **El PDF/DOCX original se mueve a `DOCUMENT_ORIGINALS_DIR`** (carpeta
+     `document_originals/`, fuera de `DOCUMENTS_DIR`) -- no se borra. La
+     ingesta y el chunking solo ven el `.txt` recién creado; el original se
+     conserva aparte para poder servirlo tal cual si un estudiante lo
+     descarga como fuente citada (ver
+     [casos-de-uso.md](casos-de-uso.md#cu-08-descargar-el-documento-original-citado-como-fuente)
+     y `_find_stored_original`/`download_document` en `app/api/routes.py`).
+     Motivo de convertir a `.txt` para indexar, medido en
+     [notas-mejora-documentos.md](notas-mejora-documentos.md): re-parsear un
+     PDF en cada reconstrucción del índice puede ser hasta ~14x más lento
+     que leer un `.txt`, y un PDF corrupto puede tardar +60s.
    - Si la extracción falla (PDF corrupto, sin texto, etc.), se borra el
      archivo recién escrito y se responde error -- no queda nada a medias.
 4. **TXT y XLSX no se convierten**, se quedan con su extensión original. El
