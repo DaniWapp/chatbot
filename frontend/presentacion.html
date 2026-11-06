@@ -591,7 +591,7 @@
             <svg viewBox="0 0 48 48" fill="none"><rect x="4" y="8" width="40" height="26" rx="10" fill="var(--accent-soft)"/><path d="M14 38 L14 31 L22 31 Z" fill="var(--accent-soft)"/><rect x="12" y="17" width="20" height="3" rx="1.5" fill="var(--accent)"/><rect x="12" y="23" width="14" height="3" rx="1.5" fill="var(--accent)"/></svg>
           </div>
           <h4>Pregunta</h4>
-          <p>"¿Horario de bienestar?"</p>
+          <p>"¿Cuándo abren las inscripciones?"</p>
         </div>
         <div class="pipe-arrow"><svg width="20" height="14" viewBox="0 0 20 14" fill="none"><path d="M1 7h16m0 0-5-5m5 5-5 5" stroke="var(--text-faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="pipe-step">
@@ -905,16 +905,12 @@ y cita la fuente.</div>
   <section class="slide gutter">
     <div class="frame frame-split split">
       <div class="split-text">
-        <h1>Pruébalo tú mismo</h1>
-        <p class="lede">Escanea y hazle una pregunta real sobre la Facultad — por ejemplo:</p>
+        <h1>Así responde, en vivo</h1>
+        <p class="lede">Pregúntame algo real sobre la Facultad — por ejemplo:</p>
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:14px;">
           <span class="pill" style="margin-top:0;">"¿Cuándo abren las inscripciones?"</span>
-          <span class="pill" style="margin-top:0;">"¿Horario de bienestar?"</span>
-          <span class="pill" style="margin-top:0;">"¿Precio de Ingeniería en TIC?"</span>
-        </div>
-        <div class="qr-row">
-          <div class="qr-plate" id="qrbox"></div>
-          <a href="https://chatbot.nubecol.com/" target="_blank" rel="noopener">chatbot.nubecol.com</a>
+          <span class="pill" style="margin-top:0;">"¿Qué programas ofrece la Facultad de Ingeniería?"</span>
+          <span class="pill" style="margin-top:0;">"¿Dónde queda la sede de Cúcuta?"</span>
         </div>
       </div>
       <div class="split-art">
@@ -948,7 +944,6 @@ y cita la fuente.</div>
   </button>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
   const slides = Array.from(document.querySelectorAll(".slide"));
   const dotsEl = document.getElementById("dots");
@@ -994,19 +989,6 @@ y cita la fuente.</div>
   });
 
   render();
-
-  try {
-    new QRCode(document.getElementById("qrbox"), {
-      text: "https://chatbot.nubecol.com/",
-      width: 110,
-      height: 110,
-      colorDark: "#2e1065",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
-    });
-  } catch (e) {
-    document.getElementById("qrbox").textContent = "chatbot.nubecol.com";
-  }
 </script>
 </body>
 </html>
