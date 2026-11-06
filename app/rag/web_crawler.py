@@ -31,6 +31,40 @@ USER_AGENT = "Mozilla/5.0 (compatible; AsistenteInstitucionalBot/1.0; indexador 
 
 BINARY_EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
 
+# Caso real encontrado rastreando un catálogo de productos (una
+# ferretería): trafilatura trató toda la grilla de 108 tarjetas de
+# producto como "navegación" y la descartó, dejando solo el texto de
+# marketing alrededor -- 558 caracteres de 8120 visibles (6.9%). Contra
+# una página normal de contenido (unilibre.edu.co, ya validada en
+# producción) trafilatura retiene 38.3% -- hay un salto grande y claro
+# entre "boilerplate removido correctamente" y "contenido real perdido".
+# Por debajo de este umbral, se usa el texto visible completo (sin
+# filtrar boilerplate) como respaldo en vez de perder la página entera.
+_MIN_EXTRACTION_RATIO = 0.15
+# No vale la pena ni intentar el respaldo en páginas casi vacías (un menú
+# de 3 enlaces, por ejemplo) -- ahí trafilatura devolviendo poco o nada
+# es simplemente correcto, no un caso de sub-extracción.
+_MIN_RAW_TEXT_FOR_FALLBACK = 1000
+
+
+def _raw_visible_text(html: str) -> str:
+    """Todo el texto visible de la página, sin remover boilerplate --
+    respaldo para cuando trafilatura descarta casi todo el contenido real
+    (ver _looks_under_extracted)."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return soup.get_text(separator="\n", strip=True)
+
+
+def _looks_under_extracted(extracted: str, raw_text: str) -> bool:
+    """True si trafilatura se quedó con una fracción sospechosamente
+    chica del texto visible real de una página sustancial -- umbral
+    calibrado contra el caso real documentado arriba."""
+    if len(raw_text) < _MIN_RAW_TEXT_FOR_FALLBACK:
+        return False
+    return len(extracted.strip()) < len(raw_text) * _MIN_EXTRACTION_RATIO
+
 # Marca clásica de texto de relleno ("Lorem ipsum dolor sit amet...") --
 # aparece en páginas reales del sitio que un editor nunca llegó a
 # completar (plantillas publicadas por error o dejadas a medias), pero
@@ -214,6 +248,9 @@ def crawl_site(
                 continue
 
             text = trafilatura.extract(response.text)
+            raw_text = _raw_visible_text(response.text)
+            if _looks_under_extracted(text or "", raw_text):
+                text = raw_text
             if text and text.strip() and not is_placeholder_text(text):
                 yield CrawledPage(url=url, filename=url_to_filename(url), text=text)
 

@@ -175,6 +175,16 @@ protecciones:
   con el contenido principal (descarta menús de navegación, pie de
   página, banners) -- validado manualmente contra el sitio real de la
   universidad antes de construir esta función.
+- **Respaldo cuando trafilatura descarta demasiado** (`_looks_under_extracted`):
+  caso real encontrado rastreando el catálogo de productos de una
+  ferretería -- trafilatura trató la grilla entera de 108 tarjetas de
+  producto como "navegación" y la descartó, quedándose solo con el
+  texto de marketing alrededor (558 de 8120 caracteres visibles, 6.9%
+  -- contra 38.3% en una página de contenido normal ya validada). Si el
+  texto extraído es menos del 15% del texto visible total de una página
+  sustancial (más de 1000 caracteres), se usa el texto visible completo
+  como respaldo en vez de perder la página entera -- a costa de algo de
+  ruido de navegación, preferible a no tener ningún dato real.
 - **Páginas de plantilla sin editar** (`is_placeholder_text`): un sitio
   real puede tener páginas publicadas por error o dejadas a medias, con
   texto de relleno ("Lorem ipsum dolor sit amet...") en vez de contenido

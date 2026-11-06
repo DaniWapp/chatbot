@@ -97,6 +97,30 @@ def test_is_placeholder_text_ignores_real_page_with_unfinished_post_embedded():
     assert web_crawler.is_placeholder_text(texto) is False
 
 
+def test_looks_under_extracted_flags_real_catalog_case():
+    """Caso real: una ferretería con 108 productos en tarjetas -- trafilatura
+    se quedaba con 558 de 8120 caracteres visibles (6.9%), descartando la
+    grilla entera como si fuera navegación."""
+    raw = "Sikaflex 221 Pintura Koraza " * 60  # ~1700 caracteres, simula el catálogo
+    extracted_pobre = "Catálogo Ferretero. Se encontraron 108 productos disponibles."
+    assert web_crawler._looks_under_extracted(extracted_pobre, raw) is True
+
+
+def test_looks_under_extracted_ignores_normal_boilerplate_removal():
+    """Una página de contenido normal (ya validada en producción) retiene
+    ~38% del texto visible al quitarle menús y pie de página -- eso es
+    boilerplate removido correctamente, no sub-extracción."""
+    raw = "x" * 9222
+    extracted_normal = "x" * 3535
+    assert web_crawler._looks_under_extracted(extracted_normal, raw) is False
+
+
+def test_looks_under_extracted_ignores_small_pages():
+    """Un menú de 3 enlaces del que trafilatura no saca casi nada es
+    simplemente correcto -- no activa el respaldo."""
+    assert web_crawler._looks_under_extracted("", "Inicio Contacto Nosotros") is False
+
+
 # --- Cliente HTTP falso, para probar crawl_site sin red real ---------------
 
 
@@ -229,6 +253,28 @@ def test_crawl_site_skips_placeholder_pages_but_still_follows_their_links(mock_e
     urls = {p.url for p in pages}
     assert "https://sitio.edu/cucuta" not in urls
     assert "https://sitio.edu/cucuta/pagina-real" in urls
+
+
+_CATALOGO_HTML = "<p>Catálogo Ferretero.</p>" + "<div><a href='#'>Sikaflex 221</a> $60.000</div>" * 60
+
+
+def _extract_side_effect_catalogo(html):
+    if html == _CATALOGO_HTML:
+        # Simula lo que de verdad hace trafilatura con esta página real:
+        # descarta la grilla de productos, deja solo el texto de marketing.
+        return "Catálogo Ferretero. Se encontraron 60 productos disponibles."
+    return f"contenido extraido de: {html[:20]}"
+
+
+@patch("app.rag.web_crawler.trafilatura.extract", side_effect=_extract_side_effect_catalogo)
+def test_crawl_site_falls_back_to_raw_text_when_trafilatura_under_extracts(mock_extract):
+    """Caso real: un catálogo de productos (ferretería) donde trafilatura
+    trataba la grilla de tarjetas como navegación y perdía los 108
+    productos reales -- debe recuperarlos vía el texto visible completo."""
+    client = _FakeClient({"https://sitio.edu/cucuta": _FakeResponse(text=_CATALOGO_HTML)})
+    pages = list(web_crawler.crawl_site("https://sitio.edu/cucuta/", max_depth=0, max_pages=10, client=client))
+    assert len(pages) == 1
+    assert "Sikaflex 221" in pages[0].text
 
 
 class _RaisingClient:
