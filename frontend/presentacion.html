@@ -985,9 +985,11 @@ y cita la fuente.</div>
 
   prevBtn.addEventListener("click", () => go(-1));
   nextBtn.addEventListener("click", () => go(1));
+  const NEXT_KEYS = ["ArrowRight", "ArrowDown", "PageDown", " ", "Spacebar", "Enter"];
+  const PREV_KEYS = ["ArrowLeft", "ArrowUp", "PageUp", "Backspace"];
   document.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowRight" || e.key === " ") go(1);
-    if (e.key === "ArrowLeft") go(-1);
+    if (NEXT_KEYS.includes(e.key)) { e.preventDefault(); go(1); }
+    else if (PREV_KEYS.includes(e.key)) { e.preventDefault(); go(-1); }
   });
 
   let touchStartX = null;
