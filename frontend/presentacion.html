@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Asistente Institucional — Feria</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b21b6'/%3E%3Ccircle cx='12' cy='14' r='2.6' fill='white'/%3E%3Ccircle cx='20' cy='14' r='2.6' fill='white'/%3E%3Cpath d='M11 20 Q16 24 21 20' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Cline x1='16' y1='6' x2='16' y2='3' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='2.5' r='1.8' fill='white'/%3E%3C/svg%3E">
 <style>
   /*
     Dirección: la marca visual real del producto (frontend/style.css del
@@ -172,19 +173,18 @@
   .chunk-bar { margin-top: 28px; max-width: 600px; }
   .chunk-bar-track { position: relative; height: 40px; background: var(--border); border-radius: 8px; overflow: hidden; }
   .chunk-seg { position: absolute; top: 4px; height: 32px; border-radius: 6px; opacity: 0.82; }
+  .chunk-seg span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 0.05em; text-transform: uppercase; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
   .chunk-seg.a { background: var(--accent); }
   .chunk-seg.b { background: var(--accent-dark); }
   .chunk-bar-nums { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-faint); margin-top: 6px; font-variant-numeric: tabular-nums; }
   .chunk-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
   .chunk-legend-row { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; }
   .chunk-legend-row .sw { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
-  .overlap-example { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; max-width: 620px; }
-  .overlap-chunk { padding-left: 14px; border-left: 3px solid; }
-  .overlap-chunk.a { border-color: var(--accent); }
-  .overlap-chunk.b { border-color: var(--accent-dark); }
-  .overlap-chunk .overlap-label { display: block; font-size: 10.5px; font-weight: 700; color: var(--text-faint); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .overlap-chunk p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.55; }
-  .overlap-chunk mark { background: var(--accent-soft); color: var(--accent-dark); border-radius: 4px; padding: 1px 3px; font-weight: 600; }
+  .overlap-line { margin: 14px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.55; max-width: 620px; }
+  .overlap-line.bottom { margin: 10px 0 0; }
+  .overlap-line mark { border-radius: 4px; padding: 1px 3px; font-weight: 600; }
+  .overlap-line.top mark { background: var(--accent); color: #fff; }
+  .overlap-line.bottom mark { background: var(--accent-dark); color: #fff; }
 
   /* ---------- pipeline con íconos (transición indexar -> preguntar) ---------- */
   .pipeline { display: flex; align-items: flex-start; gap: 4px; margin-top: 30px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
@@ -342,7 +342,7 @@
     <div class="frame">
       <p class="eyebrow">El problema</p>
       <h2>Responde seguro. No siempre correcto.</h2>
-      <p class="lede" style="margin-top:8px;">Un modelo de lenguaje predice la palabra más probable que sigue — no "sabe" el reglamento de tu universidad, pero puede sonar igual de convincente inventándolo.</p>
+      <p class="lede" style="margin-top:8px;">Cumplir esa promesa no es automático. Un modelo de lenguaje predice la palabra más probable que sigue — no "sabe" el reglamento de tu universidad, pero puede sonar igual de convincente inventándolo.</p>
       <div class="compare">
         <div class="compare-col">
           <svg width="100" height="100" viewBox="0 0 64 64" fill="none">
@@ -425,30 +425,22 @@
     <div class="frame frame-wide">
       <p class="eyebrow"><span class="part">Indexar</span> · Paso 2 — se corta en fragmentos</p>
       <h2>Ni todo junto, ni cualquier corte</h2>
-      <p class="lede" style="margin-top:6px;">El sistema no busca en el documento entero: lo divide en trozos (<b>chunks</b>) de ~1000 caracteres, cortando siempre en un punto o un espacio — nunca a mitad de una palabra.</p>
+      <p class="lede" style="margin-top:6px;">Con el archivo ya convertido a texto plano, el sistema no lo busca entero: lo divide en trozos (<b>chunks</b>) de ~1000 caracteres, cortando siempre en un punto o un espacio — nunca a mitad de una palabra.</p>
+      <p class="overlap-line top">...una vez el estudiante culmina el proceso en la oficina de admisiones. <mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark></p>
       <div class="chunk-bar">
         <div class="chunk-bar-track">
-          <div class="chunk-seg a" style="left:0%; width:63.2%;"></div>
-          <div class="chunk-seg b" style="left:61.2%; width:38.8%;"></div>
+          <div class="chunk-seg a" style="left:0%; width:63.2%;"><span>Chunk 0</span></div>
+          <div class="chunk-seg b" style="left:61.2%; width:38.8%;"><span>Chunk 1</span></div>
         </div>
         <div class="chunk-bar-nums"><span>0</span><span>1389 caracteres</span></div>
       </div>
+      <p class="overlap-line bottom"><mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark> Los estudiantes de primer ingreso deben presentar además el certificado de bachiller original.</p>
       <div class="chunk-legend">
         <div class="chunk-legend-row"><span class="sw" style="background:var(--accent);"></span> Chunk 0 — caracteres 0 a 878</div>
         <div class="chunk-legend-row"><span class="sw" style="background:var(--accent-dark);"></span> Chunk 1 — caracteres 850 a 1389</div>
       </div>
-      <div class="overlap-example">
-        <div class="overlap-chunk a">
-          <span class="overlap-label">Fin del chunk 0</span>
-          <p>...una vez el estudiante culmina el proceso en la oficina de admisiones. <mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark></p>
-        </div>
-        <div class="overlap-chunk b">
-          <span class="overlap-label">Inicio del chunk 1</span>
-          <p><mark>Las inscripciones del segundo semestre abren el 15 de enero y cierran el 30.</mark> Los estudiantes de primer ingreso deben presentar además el certificado de bachiller original.</p>
-        </div>
-      </div>
       <div class="note-card">
-        <strong>Caso real medido en este proyecto:</strong> un párrafo de 1389 caracteres se cortó así. El traslape entre ambos chunks quedó en solo 28 caracteres (no los 150 configurados), porque el corte real busca el punto más cercano, no una cuenta exacta de caracteres. La frase resaltada arriba ilustra ese mismo mecanismo: son los mismos caracteres físicos, repetidos en ambos chunks.
+        <strong>Caso real medido en este proyecto:</strong> un párrafo de 1389 caracteres se cortó así. El traslape entre ambos chunks quedó en solo 28 caracteres (no los 150 configurados), porque el corte real busca el punto más cercano, no una cuenta exacta de caracteres. La frase resaltada arriba y abajo de la barra ilustra ese mismo mecanismo: son los mismos caracteres físicos, repetidos en ambos chunks — morado claro donde pertenece al chunk 0, morado oscuro donde pertenece al chunk 1.
       </div>
       <div class="note-card" style="margin-top:12px;">
         <strong>La excepción:</strong> una fila de Excel o un par pregunta-respuesta de FAQ nunca se parte — cada uno es, completo, su propio chunk.
@@ -459,9 +451,19 @@
   <!-- 06 Paso 3 — intro a embeddings (INDEXAR) -->
   <section class="slide gutter">
     <div class="frame frame-wide">
-      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — cada fragmento se vuelve números</p>
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — cada fragmento (chunk) se vuelve números</p>
       <h2>El texto se vuelve números</h2>
-      <p class="lede" style="margin-top:6px;">Una computadora no entiende palabras — entiende vectores. Tanto cada fragmento ahora, como cada pregunta más adelante, pasan por el mismo cálculo. Frases con significado parecido quedan cerca entre sí.</p>
+      <p class="lede" style="margin-top:6px;">Una computadora no entiende palabras — entiende vectores. Tanto cada fragmento (chunk) ahora, como cada pregunta más adelante, pasan por el mismo cálculo. Frases con significado parecido quedan cerca entre sí.</p>
+      <div class="tokens" style="margin-top:18px;">
+        <span class="token-chip">-0.2348</span>
+        <span class="token-chip">0.2254</span>
+        <span class="token-chip">0.1388</span>
+        <span class="token-chip">-0.0176</span>
+        <span class="token-chip">0.0586</span>
+        <span class="token-chip edge">···</span>
+        <span class="token-chip edge">384 números en total</span>
+      </div>
+      <p class="hint">Así luce, parcialmente, el vector real de una de estas frases — los mismos primeros 5 números que vas a ver calculados, dimensión por dimensión, en las próximas dos láminas.</p>
       <div class="scatter-row">
         <svg width="220" height="180" viewBox="0 0 220 180">
           <rect width="220" height="180" rx="12" fill="var(--accent-soft)"/>
@@ -477,7 +479,7 @@
         </svg>
         <dl class="glossary">
           <dt>Embeddings</dt>
-          <dd>384 números por fragmento, calculados localmente, sin costo.</dd>
+          <dd>384 números por fragmento (chunk), calculados localmente, sin costo.</dd>
           <dt>Búsqueda híbrida</dt>
           <dd>Significado (semántica) + palabra exacta, en paralelo — más adelante, en detalle.</dd>
           <dt>Verificación</dt>
@@ -488,38 +490,62 @@
     </div>
   </section>
 
+  <!-- 06b Paso 3 — quién entrenó el modelo (INDEXAR) -->
+  <section class="slide gutter">
+    <div class="frame frame-wide">
+      <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — antes de calcular nada</p>
+      <h2>No lo entrenamos nosotros</h2>
+      <p class="lede" style="margin-top:6px;">Antes de ver cómo se calcula ese vector, vale la pena saber de dónde sale el modelo que lo calcula: <b>paraphrase-multilingual-MiniLM-L12-v2</b> es un modelo público, destilado de XLM-RoBERTa y afinado para medir similitud semántica — publicado por <b>sentence-transformers</b> mucho antes de este proyecto. Aquí solo se descarga y se usa: nunca se reentrena.</p>
+      <div class="specs" style="grid-template-columns: 1fr 1fr;">
+        <div class="spec">
+          <div class="term">MiniLM-L12-H384</div>
+          <div class="val">L12 = 12 capas de profundidad, la misma que BERT-base. H384 = cada vector mide 384 números — exactamente la mitad de los 768 de BERT-base: misma profundidad de razonamiento, la mitad de ancho.</div>
+        </div>
+        <div class="spec">
+          <div class="term">117.6M parámetros</div>
+          <div class="val">De esos, unos <b>96M</b> son solo la tabla de vocabulario (250,037 piezas de subpalabra × 384 números) para cubrir ~100 idiomas.</div>
+        </div>
+      </div>
+      <p class="hint">Decisión deliberada de quienes entrenaron el modelo: algo menos de matiz semántico, a cambio de correr rápido, local y gratis, sin GPU — suficiente para preguntas institucionales directas.</p>
+    </div>
+  </section>
+
   <!-- 07 Paso 3 — tokenización y promedio (INDEXAR) -->
   <section class="slide gutter">
     <div class="frame frame-wide">
       <p class="eyebrow"><span class="part">Indexar</span> · Paso 3 — el cálculo real, paso a paso</p>
       <h2>De la frase a un solo vector</h2>
-      <p class="lede" style="margin-top:4px;">La pregunta real <b>"¿Cuándo abren las inscripciones?"</b> no se lee como palabras completas — se corta en pedazos de un vocabulario fijo:</p>
+      <p class="lede" style="margin-top:4px;">Tomemos la frase que viste repetirse entre los dos chunks del ejemplo anterior: <b>"Las inscripciones del segundo semestre abren el 15 de enero."</b> No se lee como palabras completas — se corta en pedazos de un vocabulario fijo:</p>
       <div class="tokens">
         <span class="token-chip edge">&lt;s&gt;</span>
-        <span class="token-chip">¿</span>
-        <span class="token-chip">Cu</span>
-        <span class="token-chip">á</span>
-        <span class="token-chip">ndo</span>
-        <span class="token-chip">▁a</span>
-        <span class="token-chip">bren</span>
-        <span class="token-chip">▁las</span>
+        <span class="token-chip">▁Las</span>
         <span class="token-chip">▁in</span>
         <span class="token-chip">scrip</span>
         <span class="token-chip">ciones</span>
-        <span class="token-chip">?</span>
+        <span class="token-chip">▁del</span>
+        <span class="token-chip">▁segundo</span>
+        <span class="token-chip">▁semestre</span>
+        <span class="token-chip">▁a</span>
+        <span class="token-chip">bren</span>
+        <span class="token-chip">▁el</span>
+        <span class="token-chip">▁15</span>
+        <span class="token-chip">▁de</span>
+        <span class="token-chip">▁enero</span>
+        <span class="token-chip">.</span>
         <span class="token-chip edge">&lt;/s&gt;</span>
       </div>
-      <p class="hint">13 tokens reales — "inscripciones" se parte en 3 piezas (▁in + scrip + ciones). Cada uno arranca con 384 números y pasa por 12 capas que lo van contextualizando.</p>
-      <p class="lede" style="margin-top:26px;">Para representar la frase completa con un solo vector, se <b>promedia</b> cada una de las 384 posiciones a través de los 13 tokens. Así se ve la cuenta real, completa, para una sola posición (dimensión 0):</p>
+      <p class="hint">16 tokens reales — "inscripciones" se vuelve a partir en 3 piezas (▁in + scrip + ciones), igual que antes. Cada uno arranca con 384 números y pasa por 12 capas que lo van contextualizando.</p>
+      <p class="lede" style="margin-top:26px;">Para representar la frase completa con un solo vector, se <b>promedia</b> cada una de las 384 posiciones a través de los 16 tokens. Así se ve la cuenta real, completa, para una sola posición (dimensión 0):</p>
       <table class="calc-mini">
-        <tr><td>&lt;s&gt;</td><td>0.3423</td></tr>
-        <tr><td>¿ · Cu · á · ndo</td><td>0.2428 + 0.0372 + 0.1019 + 0.0732</td></tr>
-        <tr><td>▁a · bren · ▁las</td><td>0.1803 + 0.1174 + 0.0463</td></tr>
-        <tr><td>▁in · scrip · ciones</td><td>0.2051 + 0.4122 + 0.1744</td></tr>
-        <tr><td>? · &lt;/s&gt;</td><td>0.3073 + 0.3421</td></tr>
-        <tr class="total"><td>suma ÷ 13 tokens =</td><td>0.1986</td></tr>
+        <tr><td>&lt;s&gt;</td><td>-0.1760</td></tr>
+        <tr><td>▁Las · ▁in · scrip · ciones</td><td>-0.3051 + 0.0018 + 0.1770 + (-0.1107)</td></tr>
+        <tr><td>▁del · ▁segundo · ▁semestre</td><td>-0.1699 + (-0.4745) + 0.0356</td></tr>
+        <tr><td>▁a · bren · ▁el</td><td>-0.1075 + (-0.2928) + (-0.3885)</td></tr>
+        <tr><td>▁15 · ▁de · ▁enero</td><td>-0.3476 + (-0.3682) + (-0.7672)</td></tr>
+        <tr><td>. · &lt;/s&gt;</td><td>-0.2869 + (-0.1762)</td></tr>
+        <tr class="total"><td>suma ÷ 16 tokens =</td><td>-0.2348</td></tr>
       </table>
-      <p class="hint">Esto se repite 384 veces (una por dimensión) — el resultado es un único vector que representa toda la pregunta.</p>
+      <p class="hint">Esto se repite 384 veces (una por dimensión) — el resultado es un único vector que representa toda la frase. El mismo cálculo, aplicado esta vez a una pregunta real, lo verás en el paso 4.</p>
     </div>
   </section>
 
@@ -541,16 +567,16 @@
         <div class="tri-formula">dim₀² + dim₁² + ··· + dim₃₈₃² = longitud²</div>
       </div>
       <table class="calc-mini" style="margin-top:22px;">
-        <tr><td>dim 0² = 0.1986²</td><td>0.0395</td></tr>
-        <tr><td>dim 1² = 0.1579²</td><td>0.0249</td></tr>
-        <tr><td>dim 2² = (-0.2664)²</td><td>0.0710</td></tr>
-        <tr><td>dim 3² = (-0.1290)²</td><td>0.0166</td></tr>
-        <tr><td>dim 4² = (-0.2143)²</td><td>0.0459</td></tr>
-        <tr class="dim-more"><td>+ los cuadrados de las otras 379 dimensiones</td><td>+ 20.0880</td></tr>
-        <tr><td>suma de los 384 cuadrados</td><td>20.2921</td></tr>
-        <tr class="total"><td>√20.2921 = longitud del vector</td><td>4.5047</td></tr>
+        <tr><td>dim 0² = (-0.2348)²</td><td>0.0551</td></tr>
+        <tr><td>dim 1² = 0.2254²</td><td>0.0508</td></tr>
+        <tr><td>dim 2² = 0.1388²</td><td>0.0193</td></tr>
+        <tr><td>dim 3² = (-0.0176)²</td><td>0.0003</td></tr>
+        <tr><td>dim 4² = 0.0586²</td><td>0.0034</td></tr>
+        <tr class="dim-more"><td>+ los cuadrados de las otras 379 dimensiones</td><td>+ 15.7415</td></tr>
+        <tr><td>suma de los 384 cuadrados</td><td>15.8704</td></tr>
+        <tr class="total"><td>√15.8704 = longitud del vector</td><td>3.9838</td></tr>
       </table>
-      <p class="hint">Cada dimensión se divide entre esa longitud (0.1986 ÷ 4.5047 = 0.0441) — así el vector final siempre mide exactamente 1, listo para compararse.</p>
+      <p class="hint">Cada dimensión se divide entre esa longitud (-0.2348 ÷ 3.9838 = -0.0589) — así el vector final siempre mide exactamente 1, listo para compararse.</p>
     </div>
   </section>
 
@@ -640,7 +666,7 @@
     <div class="frame frame-wide">
       <p class="eyebrow"><span class="part">Preguntar</span> · Paso 4 — comparar la pregunta</p>
       <h2>Comparar es un producto punto</h2>
-      <p class="lede" style="margin-top:4px;">La pregunta se convierte en vector con el mismo cálculo del paso 3, ya normalizado. Multiplicar coordenada por coordenada y sumar da directamente qué tan parecidos son dos vectores. Contra dos fragmentos reales distintos:</p>
+      <p class="lede" style="margin-top:4px;">La pregunta real <b>"¿Cuándo abren las inscripciones?"</b> se convierte en vector con el mismo cálculo del paso 3, ya normalizado. Multiplicar coordenada por coordenada y sumar da directamente qué tan parecidos son dos vectores. Contra dos fragmentos reales distintos:</p>
       <div class="gauge" style="margin-top:22px;">
         <div class="gauge-track">
           <div class="gauge-mark" style="left:9%; background:var(--text-faint);"></div>
@@ -694,7 +720,7 @@
       <div class="compare">
         <div class="compare-col">
           <div class="cap">Verificación (siempre)</div>
-          <p>Un segundo modelo compara cada candidato directamente contra la pregunta final. Lo que no supera un puntaje mínimo de relevancia <b>se descarta</b> — nunca llega al LLM.</p>
+          <p>Ese verificador del que ya hablamos —un segundo modelo— compara cada candidato directamente contra la pregunta final. Lo que no supera un puntaje mínimo de relevancia <b>se descarta</b> — nunca llega al LLM.</p>
         </div>
         <div class="compare-col">
           <div class="cap">Reformulación (solo si hace falta)</div>
@@ -734,7 +760,7 @@ y cita la fuente.</div>
     <div class="frame frame-wide">
       <p class="eyebrow"><span class="part">Preguntar</span> · Paso 7 — antes y después de llamar a Groq</p>
       <h2>A veces, ni hace falta llamar al modelo</h2>
-      <p class="lede" style="margin-top:4px;">Antes de gastar una llamada real, el sistema revisa si ya resolvió este mismo contexto antes:</p>
+      <p class="lede" style="margin-top:4px;">Pero ese mensaje no siempre llega a dispararse: antes de gastar una llamada real a Groq, el sistema revisa si ya resolvió este mismo contexto antes:</p>
       <figure style="margin:20px 0 0;">
         <svg width="100%" height="auto" viewBox="0 0 480 420" role="img" aria-label="Diagrama: el contexto recuperado se compara contra una huella; si ya existe, se reutiliza la respuesta en casi 0 ms; si no, se llama a Groq, que tarda 704.66 ms medidos; ambos caminos terminan filtrando las fuentes realmente usadas antes de responder al estudiante." style="max-width:460px; height:auto; display:block; margin:0 auto;">
           <rect x="150" y="10" width="180" height="40" rx="8" fill="var(--accent-soft)" stroke="var(--border)" stroke-width="1.2"/>
@@ -796,7 +822,7 @@ y cita la fuente.</div>
     <div class="frame frame-wide">
       <p class="eyebrow">Para quienes quieren más</p>
       <h2>La arquitectura completa</h2>
-      <p class="lede" style="margin-top:4px;">Cada pieza real del sistema, medida — no estimada.</p>
+      <p class="lede" style="margin-top:4px;">Ya viste el recorrido completo, paso a paso. Esto es todo junto, como ficha técnica: cada pieza real del sistema, medida — no estimada.</p>
       <div class="specs">
         <div class="spec">
           <div class="term">Embeddings</div>
@@ -910,7 +936,7 @@ y cita la fuente.</div>
   </button>
   <div style="display:flex; align-items:center; gap:14px;">
     <div class="dots" id="dots"></div>
-    <span class="counter" id="counter">1 / 16</span>
+    <span class="counter" id="counter">1 / 18</span>
   </div>
   <button class="nav-btn" id="nextBtn" aria-label="Siguiente">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
